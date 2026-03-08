@@ -2,7 +2,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
-import { Activity, Search, BarChart3, Info, Menu, X, LogIn, LogOut, User, Stethoscope } from 'lucide-react';
+import { Activity, Search, BarChart3, Info, Menu, X, LogIn, LogOut, User, Stethoscope, FileText } from 'lucide-react';
 import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 

@@ -39,7 +39,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const fetchUserData = async (userId: string) => {
-    const [{ data: profileData }, { data: roleData }] = await Promise.all([
+    const [{ data: profileData }, { data: roleRows }] = await Promise.all([
       supabase
         .from('profiles')
         .select('full_name, organization')
@@ -48,12 +48,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       supabase
         .from('user_roles')
         .select('role')
-        .eq('user_id', userId)
-        .maybeSingle(),
+        .eq('user_id', userId),
     ]);
 
+    const roles = (roleRows || []).map((r: any) => r.role as AppRole);
+    const resolvedRole: AppRole | null = roles.includes('admin')
+      ? 'admin'
+      : roles.includes('healthcare_professional')
+        ? 'healthcare_professional'
+        : roles.includes('regular_user')
+          ? 'regular_user'
+          : null;
+
     setProfile(profileData || null);
-    setRole((roleData?.role as AuthContextType['role']) || null);
+    setRole(resolvedRole);
   };
 
   const ensureUserBootstrapData = async (authUser: User) => {

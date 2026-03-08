@@ -5,10 +5,10 @@ import { supabase } from '@/integrations/supabase/client';
 interface AuthContextType {
   user: User | null;
   session: Session | null;
-  role: 'healthcare_professional' | 'regular_user' | null;
+  role: 'healthcare_professional' | 'regular_user' | 'admin' | null;
   profile: { full_name: string | null; organization: string | null } | null;
   loading: boolean;
-  signUp: (email: string, password: string, fullName: string, role: 'healthcare_professional' | 'regular_user', organization?: string) => Promise<{ error: any }>;
+  signUp: (email: string, password: string, fullName: string, role: 'healthcare_professional' | 'regular_user' | 'admin', organization?: string) => Promise<{ error: any }>;
   signIn: (email: string, password: string) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
 }
@@ -69,7 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  const signUp = async (email: string, password: string, fullName: string, userRole: 'healthcare_professional' | 'regular_user', organization?: string) => {
+  const signUp = async (email: string, password: string, fullName: string, userRole: 'healthcare_professional' | 'regular_user' | 'admin', organization?: string) => {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,

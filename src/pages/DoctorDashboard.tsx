@@ -72,11 +72,24 @@ export default function DoctorDashboard() {
   }, [doctor]);
 
   const handleTakeCase = async (rx: any) => {
-    await supabase.from('prescriptions').update({
-      doctor_id: doctor?.id,
-      status: 'under_review',
-    }).eq('id', rx.id);
-    setSelectedPrescription(rx);
+    if (!doctor) return;
+
+    const updateQuery = supabase
+      .from('prescriptions')
+      .update({
+        doctor_id: doctor.id,
+        status: 'under_review',
+      })
+      .eq('id', rx.id);
+
+    if (rx.doctor_id) {
+      updateQuery.eq('doctor_id', doctor.id);
+    } else {
+      updateQuery.is('doctor_id', null);
+    }
+
+    await updateQuery;
+    setSelectedPrescription({ ...rx, doctor_id: doctor.id, status: 'under_review' });
     setDoctorNotes('');
     queryClient.invalidateQueries({ queryKey: ['pending-prescriptions'] });
   };

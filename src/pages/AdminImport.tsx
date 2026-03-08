@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { Upload, Loader2, Database, CheckCircle, Brain, FileText } from 'lucide-react';
+import { Upload, Loader2, Database, CheckCircle, Brain, FileText, PlayCircle } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 function parseCSVLine(line: string): string[] {
@@ -34,26 +34,26 @@ const DATASET_INFO: Record<DatasetType, { title: string; titleBn: string; desc: 
   medicines: {
     title: 'Medicine Database (DGDA)',
     titleBn: 'ওষুধ ডাটাবেজ (DGDA)',
-    desc: 'Import DGDA medicine CSV. Columns: id, brand_name, medicine_type, slug, form, generic_name, strength, manufacturer, price_info, pack_info',
-    descBn: 'DGDA ওষুধ CSV আমদানি। কলাম: id, brand_name, medicine_type, slug, form, generic_name, strength, manufacturer, price_info, pack_info',
+    desc: 'Import DGDA medicine CSV with 21,000+ medicines. Columns: id, brand_name, medicine_type, slug, form, generic_name, strength, manufacturer, price_info, pack_info',
+    descBn: 'DGDA ওষুধ CSV আমদানি (২১,০০০+ ওষুধ)। কলাম: id, brand_name, medicine_type, slug, form, generic_name, strength, manufacturer, price_info, pack_info',
   },
   symptom_disease_matrix: {
     title: 'Symptom-Disease Matrix',
     titleBn: 'লক্ষণ-রোগ ম্যাট্রিক্স',
-    desc: 'Binary matrix CSV. First column = disease name, remaining columns = 0/1 for each symptom. Used for ML classification.',
+    desc: 'Binary matrix CSV. First column = disease name, remaining columns = 0/1 for each symptom.',
     descBn: 'বাইনারি ম্যাট্রিক্স CSV। প্রথম কলাম = রোগের নাম, বাকি কলাম = প্রতিটি লক্ষণের জন্য ০/১।',
   },
   specialist_classification: {
     title: 'Specialist Classification',
     titleBn: 'বিশেষজ্ঞ শ্রেণীবিভাগ',
-    desc: 'CSV with Patient ID, Gender, Problem, Specialist. Maps patient complaints to specialist types.',
-    descBn: 'CSV: Patient ID, Gender, Problem, Specialist। রোগীর সমস্যা থেকে বিশেষজ্ঞ নির্ধারণ।',
+    desc: 'CSV with Patient ID, Gender, Problem, Specialist.',
+    descBn: 'CSV: Patient ID, Gender, Problem, Specialist।',
   },
   medicine_ner: {
     title: 'Medicine NER Knowledge Base',
     titleBn: 'ওষুধ NER জ্ঞানভাণ্ডার',
-    desc: 'Bengali medical NER dataset. Columns: Medical Text, Medicine Name, Organ, Disease, Hormone, Pharmacological Class, Common Terms',
-    descBn: 'বাংলা মেডিকেল NER ডেটাসেট। কলাম: মেডিকেল টেক্সট, ওষুধ, অঙ্গ, রোগ, হরমোন, ফার্মাকোলজিক্যাল ক্লাস',
+    desc: 'Bengali medical NER dataset.',
+    descBn: 'বাংলা মেডিকেল NER ডেটাসেট।',
   },
 };
 
@@ -64,12 +64,14 @@ export default function AdminImport() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [progressText, setProgressText] = useState('');
   const [result, setResult] = useState<{ inserted: number; errors: number } | null>(null);
   const [activeTab, setActiveTab] = useState<DatasetType>('medicines');
 
   const handleImport = async (file: File) => {
     setImporting(true);
     setProgress(0);
+    setProgressText('');
     setResult(null);
 
     try {
@@ -89,10 +91,12 @@ export default function AdminImport() {
       toast({ title: 'Import Error', description: err.message, variant: 'destructive' });
     } finally {
       setImporting(false);
+      setProgressText('');
     }
   };
 
   const importMedicines = async (lines: string[]) => {
+    // Parse all lines into medicine objects
     const medicines = lines.map(line => {
       const cols = parseCSVLine(line);
       return {
@@ -113,13 +117,16 @@ export default function AdminImport() {
     const totalChunks = Math.ceil(medicines.length / chunkSize);
 
     for (let i = 0; i < medicines.length; i += chunkSize) {
+      const chunkIndex = Math.floor(i / chunkSize);
       const chunk = medicines.slice(i, i + chunkSize);
+      setProgressText(`Batch ${chunkIndex + 1}/${totalChunks} (${i + chunk.length}/${medicines.length} records)`);
+      
       const { data, error } = await supabase.functions.invoke('medicine-import', {
         body: { medicines: chunk, clear_existing: i === 0 },
       });
       if (error) totalErrors += chunk.length;
       else { totalInserted += data?.inserted || 0; totalErrors += data?.errors || 0; }
-      setProgress(Math.round(((Math.floor(i / chunkSize) + 1) / totalChunks) * 100));
+      setProgress(Math.round(((chunkIndex + 1) / totalChunks) * 100));
     }
     finishImport(totalInserted, totalErrors);
   };
@@ -139,11 +146,7 @@ export default function AdminImport() {
     for (let i = 0; i < rows.length; i += chunkSize) {
       const chunk = rows.slice(i, i + chunkSize);
       const { data, error } = await supabase.functions.invoke('dataset-import', {
-        body: {
-          dataset_type: 'symptom_disease_matrix',
-          data: { headers, rows: chunk },
-          clear_existing: i === 0,
-        },
+        body: { dataset_type: 'symptom_disease_matrix', data: { headers, rows: chunk }, clear_existing: i === 0 },
       });
       if (error) totalErrors += chunk.length;
       else { totalInserted += data?.inserted || 0; totalErrors += data?.errors || 0; }
@@ -196,6 +199,29 @@ export default function AdminImport() {
     finishImport(totalInserted, totalErrors);
   };
 
+  const handleImportBundledMedicines = useCallback(async () => {
+    setImporting(true);
+    setProgress(0);
+    setProgressText('Loading bundled medicine CSV...');
+    setResult(null);
+    setActiveTab('medicines');
+
+    try {
+      // Fetch the bundled CSV from the public data
+      const response = await fetch('/src/data/medicine.csv');
+      if (!response.ok) throw new Error('Could not load bundled medicine CSV');
+      const text = await response.text();
+      const lines = text.split('\n').filter(l => l.trim());
+      setProgressText(`Found ${lines.length} medicines. Starting import...`);
+      await importMedicines(lines);
+    } catch (err: any) {
+      toast({ title: 'Import Error', description: err.message, variant: 'destructive' });
+    } finally {
+      setImporting(false);
+      setProgressText('');
+    }
+  }, []);
+
   const finishImport = (inserted: number, errors: number) => {
     setResult({ inserted, errors });
     toast({
@@ -222,6 +248,30 @@ export default function AdminImport() {
         <Database className="h-6 w-6 text-primary" />
         {lang === 'bn' ? 'ডেটা আমদানি ও ML সেটআপ' : 'Data Import & ML Setup'}
       </h1>
+
+      {/* Quick Import: Bundled Medicine CSV */}
+      <Card className="mb-6 border-primary/30 bg-primary/5">
+        <CardContent className="pt-5">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="font-semibold text-sm font-bangla">
+                {lang === 'bn' ? '⚡ দ্রুত আমদানি: সম্পূর্ণ DGDA ওষুধ ডাটাবেজ (২১,০০০+ ওষুধ)' : '⚡ Quick Import: Full DGDA Medicine Database (21,000+ medicines)'}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {lang === 'bn' ? 'একটি ক্লিকে সমস্ত ওষুধ আমদানি করুন' : 'Import all medicines in one click from bundled CSV'}
+              </p>
+            </div>
+            <Button
+              onClick={handleImportBundledMedicines}
+              disabled={importing}
+              className="gap-2 shrink-0"
+            >
+              {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
+              {lang === 'bn' ? 'আমদানি শুরু' : 'Import Now'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v as DatasetType); setResult(null); }}>
         <TabsList className="grid grid-cols-2 lg:grid-cols-4 mb-4">
@@ -279,7 +329,9 @@ export default function AdminImport() {
                 {importing && (
                   <div className="space-y-2">
                     <Progress value={progress} />
-                    <p className="text-xs text-muted-foreground text-center">{progress}%</p>
+                    <p className="text-xs text-muted-foreground text-center">
+                      {progress}% {progressText && `— ${progressText}`}
+                    </p>
                   </div>
                 )}
 
@@ -313,116 +365,41 @@ export default function AdminImport() {
         </CardHeader>
         <CardContent className="space-y-4 text-sm text-muted-foreground">
           <div className="rounded-lg bg-muted p-4 space-y-3">
-            <p className="font-semibold text-foreground">{lang === 'bn' ? '১. XGBoost ক্লাসিফায়ার (লক্ষণ → রোগ)' : '1. XGBoost Classifier (Symptom → Disease)'}</p>
-            <pre className="text-xs bg-background rounded p-3 overflow-x-auto whitespace-pre-wrap">{`# Python training script
-import pandas as pd
+            <p className="font-semibold text-foreground">1. XGBoost Classifier (Symptom → Disease)</p>
+            <pre className="text-xs bg-background rounded p-3 overflow-x-auto whitespace-pre-wrap">{`import pandas as pd
 from xgboost import XGBClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 import joblib
 
-# Load the symptom-disease matrix
 df = pd.read_csv('symptom_disease_matrix.csv')
-X = df.iloc[:, 1:]  # Binary symptom columns
-y = df.iloc[:, 0]   # Disease names
-
-# Encode labels
+X = df.iloc[:, 1:]
+y = df.iloc[:, 0]
 le = LabelEncoder()
 y_encoded = le.fit_transform(y)
-
-# Train
 X_train, X_test, y_train, y_test = train_test_split(X, y_encoded, test_size=0.2)
-model = XGBClassifier(n_estimators=200, max_depth=6, learning_rate=0.1)
+model = XGBClassifier(n_estimators=200, max_depth=6)
 model.fit(X_train, y_train)
-print(f"Accuracy: {model.score(X_test, y_test):.2f}")
-
-# Save
-joblib.dump(model, 'xgboost_triage.joblib')
-joblib.dump(le, 'label_encoder.joblib')
-# Save column names for inference
-pd.Series(X.columns.tolist()).to_json('symptom_columns.json')`}</pre>
+joblib.dump(model, 'xgboost_triage.joblib')`}</pre>
           </div>
 
           <div className="rounded-lg bg-muted p-4 space-y-3">
-            <p className="font-semibold text-foreground">{lang === 'bn' ? '২. BanglaBERT NER (ওষুধ-রোগ-অঙ্গ সনাক্তকরণ)' : '2. BanglaBERT NER (Medicine-Disease-Organ Detection)'}</p>
-            <pre className="text-xs bg-background rounded p-3 overflow-x-auto whitespace-pre-wrap">{`# Train BanglaBERT for medical NER
-from transformers import AutoTokenizer, AutoModelForTokenClassification
-from transformers import TrainingArguments, Trainer
-
+            <p className="font-semibold text-foreground">2. BanglaBERT NER (Medicine-Disease-Organ Detection)</p>
+            <pre className="text-xs bg-background rounded p-3 overflow-x-auto whitespace-pre-wrap">{`from transformers import AutoTokenizer, AutoModelForTokenClassification, Trainer
 model_name = "sagorsarker/bangla-bert-base"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
-
-# Labels: Medicine, Organ, Disease, Hormone, PharmClass, O
-label_list = ["O", "B-MED", "I-MED", "B-ORG", "I-ORG", 
-              "B-DIS", "I-DIS", "B-HOR", "I-HOR", "B-PHR", "I-PHR"]
-
-# Load your MedER_Dataset_Bengali CSV and convert to BIO format
-# Each row: medical_text → tokenize → assign labels based on entity columns
-
-model = AutoModelForTokenClassification.from_pretrained(
-    model_name, num_labels=len(label_list)
-)
-
-training_args = TrainingArguments(
-    output_dir="./banglabert-medner",
-    num_train_epochs=10,
-    per_device_train_batch_size=16,
-    learning_rate=2e-5,
-    save_strategy="epoch",
-)
-
-trainer = Trainer(model=model, args=training_args, ...)
-trainer.train()
-trainer.save_model("./banglabert-medner-final")`}</pre>
-          </div>
-
-          <div className="rounded-lg bg-muted p-4 space-y-3">
-            <p className="font-semibold text-foreground">{lang === 'bn' ? '৩. বিশেষজ্ঞ শ্রেণীবিভাগ মডেল' : '3. Specialist Classification Model'}</p>
-            <pre className="text-xs bg-background rounded p-3 overflow-x-auto whitespace-pre-wrap">{`# Train specialist classifier
-from transformers import pipeline, AutoModelForSequenceClassification
-
-model_name = "sagorsarker/bangla-bert-base"
-# Fine-tune on Specialist_Classification.csv
-# Input: Problem text → Output: Specialist type
-
-# Or use XGBoost with TF-IDF:
-from sklearn.feature_extraction.text import TfidfVectorizer
-
-df = pd.read_csv('specialist_classification.csv')
-tfidf = TfidfVectorizer(max_features=5000)
-X = tfidf.fit_transform(df['Problem'])
-y = LabelEncoder().fit_transform(df['Specialist'])
-
-model = XGBClassifier(n_estimators=150)
-model.fit(X_train, y_train)`}</pre>
+label_list = ["O", "B-MED", "I-MED", "B-ORG", "I-ORG", "B-DIS", "I-DIS"]
+model = AutoModelForTokenClassification.from_pretrained(model_name, num_labels=len(label_list))
+# Fine-tune on MedER_Dataset_Bengali CSV
+trainer = Trainer(model=model, ...)
+trainer.train()`}</pre>
           </div>
 
           <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-2">
-            <p className="font-semibold text-foreground">{lang === 'bn' ? '৪. আপনার অ্যাপে মডেল সংযুক্ত করুন' : '4. Connect Models to Your App'}</p>
-            <p>{lang === 'bn' 
-              ? 'ট্রেনড মডেলগুলো একটি Python API (FastAPI/Flask) দিয়ে হোস্ট করুন, তারপর Edge Function থেকে কল করুন।'
-              : 'Host trained models via a Python API (FastAPI/Flask), then call from the Edge Function.'}</p>
-            <pre className="text-xs bg-background rounded p-3 overflow-x-auto whitespace-pre-wrap">{`# FastAPI endpoint example
-from fastapi import FastAPI
-import joblib, json
-app = FastAPI()
-
-model = joblib.load("xgboost_triage.joblib")
-le = joblib.load("label_encoder.joblib")
-columns = json.load(open("symptom_columns.json"))
-
-@app.post("/predict")
-async def predict(symptoms: list[str]):
-    # Convert symptom text to binary vector
-    vector = [1 if col in symptoms else 0 for col in columns]
-    proba = model.predict_proba([vector])[0]
-    top_5 = sorted(enumerate(proba), key=lambda x: -x[1])[:5]
-    return [{"disease": le.inverse_transform([i])[0], 
-             "confidence": float(p)} for i, p in top_5]
-
-# Deploy to: Hugging Face Spaces, Railway, Render, or AWS Lambda
-# Then in your Edge Function:
-# const resp = await fetch("https://your-ml-api.com/predict", {...})`}</pre>
+            <p className="font-semibold text-foreground">
+              {lang === 'bn' ? 'আপনার অ্যাপে মডেল সংযুক্ত করুন' : 'Connect Models to Your App'}
+            </p>
+            <p>Host your trained model via FastAPI/Hugging Face, then add the endpoint URL as a backend secret. The triage engine will call your model API for predictions.</p>
           </div>
         </CardContent>
       </Card>

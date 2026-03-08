@@ -17,11 +17,11 @@ export default function About() {
 
   const techStack = [
     { name: 'Google Gemini', desc: lang === 'bn' ? 'ক্লিনিক্যাল রিজনিং ইঞ্জিন' : 'Clinical reasoning engine' },
-    { name: 'BanglaBERT (Simulated)', desc: lang === 'bn' ? 'বাংলা NER সিমুলেশন' : 'Bangla NER simulation' },
-    { name: 'XGBoost (Simulated)', desc: lang === 'bn' ? 'রোগ শ্রেণীবিভাগ সিমুলেশন' : 'Disease classification simulation' },
-    { name: 'Supabase', desc: lang === 'bn' ? 'ডাটাবেস ও এজ ফাংশন' : 'Database & Edge Functions' },
+    { name: lang === 'bn' ? 'সিম্পটম ম্যাচিং ক্লাসিফায়ার' : 'Symptom Matching Classifier', desc: lang === 'bn' ? 'TF-IDF ভিত্তিক রোগ শ্রেণীবিভাগ' : 'TF-IDF based disease classification' },
+    { name: 'Lovable Cloud', desc: lang === 'bn' ? 'ডাটাবেস ও ব্যাকএন্ড ফাংশন' : 'Database & Backend Functions' },
     { name: 'React + Vite', desc: lang === 'bn' ? 'ফ্রন্টএন্ড ফ্রেমওয়ার্ক' : 'Frontend framework' },
     { name: 'DGDA Database', desc: lang === 'bn' ? '২১,০০০+ ওষুধের তথ্য' : '21,000+ medicine records' },
+    { name: 'Twilio', desc: lang === 'bn' ? 'ভয়েস কল ও SMS ইন্টিগ্রেশন' : 'Voice call & SMS integration' },
   ];
 
   const stats = [

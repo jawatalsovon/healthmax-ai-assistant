@@ -85,13 +85,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       { onConflict: 'id' }
     );
 
-    await supabase.from('user_roles').upsert(
-      {
+    const { data: existingRoles } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', authUser.id);
+
+    if (!existingRoles || existingRoles.length === 0) {
+      await supabase.from('user_roles').insert({
         user_id: authUser.id,
         role: safeRole,
-      },
-      { onConflict: 'user_id,role' }
-    );
+      });
+    }
 
     const doctorReg = userMeta.doctor_registration;
     if (doctorReg?.requested && doctorReg.bmdc_reg_number) {

@@ -706,7 +706,21 @@ Language preference: ${language}`,
           ml_classifier_used: true,
           ai_fallback: true,
         };
-        const sessionId = await logSession(supabase, symptoms, language, fallbackResult, patient_info);
+        const notesSummary = await summarizeTriageNotes(
+          LOVABLE_API_KEY,
+          language,
+          symptoms,
+          conversation,
+          fallbackResult,
+          patientContextFromInfo(patient_info)
+        );
+
+        const sessionId = await logSession(supabase, {
+          existingSessionId: session_id,
+          language,
+          result: fallbackResult,
+          notesSummary,
+        });
         return new Response(JSON.stringify({ ...fallbackResult, session_id: sessionId }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });

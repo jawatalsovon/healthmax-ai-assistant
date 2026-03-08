@@ -1,1 +1,7 @@
 project_id = "mykdpfqpvuvrhbomzvpe"
+
+[functions.healthmax-triage]
+verify_jwt = false
+
+[functions.medicine-search]
+verify_jwt = false

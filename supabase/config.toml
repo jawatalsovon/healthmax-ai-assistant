@@ -14,3 +14,6 @@ verify_jwt = false
 
 [functions.send-sms]
 verify_jwt = false
+
+[functions.twilio-whatsapp]
+verify_jwt = false

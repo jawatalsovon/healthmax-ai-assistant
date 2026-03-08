@@ -74,7 +74,7 @@ export default function Triage() {
           symptoms: msg,
           language: lang,
           session_id: sessionId,
-          conversation: messages.map(m => ({ role: m.role, content: m.content })),
+          conversation: [...messages, userMessage].map(m => ({ role: m.role, content: m.content })),
           patient_info: patientInfo,
         },
       });

@@ -150,6 +150,20 @@ export default function DoctorDashboard() {
     );
   }
 
+  if (!doctor.is_verified) {
+    return (
+      <div className="container mx-auto px-4 py-12 text-center">
+        <Clock className="h-12 w-12 mx-auto text-primary mb-4" />
+        <h1 className="text-xl font-bold font-bangla">{lang === 'bn' ? 'অ্যাডমিন অনুমোদনের অপেক্ষায়' : 'Waiting for admin approval'}</h1>
+        <p className="text-muted-foreground font-bangla mt-2">
+          {lang === 'bn'
+            ? 'আপনার ডাক্তার আবেদন জমা হয়েছে। অনুমোদন হলে প্রেসক্রিপশন রিভিউ কিউ দেখতে পাবেন।'
+            : 'Your doctor registration is submitted. You will see prescription requests after approval.'}
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto px-4 py-6 max-w-6xl">
       <div className="flex items-center justify-between mb-6">

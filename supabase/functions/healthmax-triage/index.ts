@@ -655,8 +655,22 @@ Language preference: ${language}`,
         }
       }
 
-      // Log session
-      const sessionId = await logSession(supabase, symptoms, language, mergedResult, patient_info);
+      // Log or update a single session record for the whole conversation
+      const notesSummary = await summarizeTriageNotes(
+        LOVABLE_API_KEY,
+        language,
+        symptoms,
+        conversation,
+        mergedResult,
+        patientContext
+      );
+
+      const sessionId = await logSession(supabase, {
+        existingSessionId: session_id,
+        language,
+        result: mergedResult,
+        notesSummary,
+      });
 
       return new Response(JSON.stringify({ ...mergedResult, session_id: sessionId }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },

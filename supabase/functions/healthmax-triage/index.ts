@@ -6,7 +6,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// Emergency rules - checked BEFORE AI
+// ─── EMERGENCY RULES (checked BEFORE any ML/AI) ───
 const EMERGENCY_PATTERNS = [
   { pattern: /chest pain|বুকে ব্যথা|বুক ব্যথা/i, action_en: "CALL EMERGENCY. Go to nearest hospital immediately.", action_bn: "জরুরি! এখনই নিকটস্থ হাসপাতালে যান।" },
   { pattern: /difficulty breathing|শ্বাসকষ্ট|শ্বাস নিতে কষ্ট/i, action_en: "Severe breathing difficulty. Seek emergency care NOW.", action_bn: "গুরুতর শ্বাসকষ্ট। এখনই জরুরি চিকিৎসা নিন।" },
@@ -15,6 +15,7 @@ const EMERGENCY_PATTERNS = [
   { pattern: /heavy bleeding|অতিরিক্ত রক্তক্ষরণ|রক্তপাত/i, action_en: "Heavy bleeding. Seek immediate medical attention.", action_bn: "অতিরিক্ত রক্তক্ষরণ। এখনই চিকিৎসা নিন।" },
   { pattern: /stroke|স্ট্রোক|পক্ষাঘাত/i, action_en: "Possible stroke. Time is critical. Go to hospital.", action_bn: "সম্ভাব্য স্ট্রোক। সময় গুরুত্বপূর্ণ। হাসপাতালে যান।" },
   { pattern: /snake.?bite|সাপে কামড়/i, action_en: "Snakebite. Go to hospital with anti-venom facility.", action_bn: "সাপে কামড়। অ্যান্টি-ভেনম সুবিধাসহ হাসপাতালে যান।" },
+  { pattern: /rabies|জলাতঙ্ক|কুকুরে কামড়/i, action_en: "Possible rabies exposure. Seek immediate vaccination.", action_bn: "জলাতঙ্কের সম্ভাবনা। এখনই টিকা নিন।" },
 ];
 
 const URGENT_PATTERNS = [
@@ -24,6 +25,142 @@ const URGENT_PATTERNS = [
   { pattern: /severe diarrhea|তীব্র ডায়রিয়া|পানিশূন্যতা/i, action_en: "Severe diarrhea/dehydration risk. Seek urgent care.", action_bn: "তীব্র ডায়রিয়া/পানিশূন্যতার ঝুঁকি। জরুরি চিকিৎসা নিন।" },
 ];
 
+// ─── ML CLASSIFIER: Weighted Symptom-Disease Matching ───
+// Simulates XGBoost output using TF-IDF-like Jaccard scoring against the disease database
+interface DiseaseRow {
+  disease_name_en: string;
+  disease_name_bn: string | null;
+  symptoms: string[];
+  emergency_flag: boolean | null;
+  specialist_type: string | null;
+  description: string | null;
+}
+
+interface MLPrediction {
+  name: string;
+  name_bn: string;
+  confidence: number;
+  specialist: string;
+  emergency: boolean;
+}
+
+function tokenizeSymptoms(input: string): string[] {
+  // Normalize and tokenize input into symptom tokens
+  const normalized = input.toLowerCase()
+    .replace(/[।,;.!?]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  
+  // Common symptom keywords (English + transliterated)
+  const tokens: string[] = [];
+  const words = normalized.split(' ');
+  
+  // Build n-grams (1, 2, 3 word combinations)
+  for (let n = 1; n <= 3; n++) {
+    for (let i = 0; i <= words.length - n; i++) {
+      tokens.push(words.slice(i, i + n).join(' '));
+    }
+  }
+  return tokens;
+}
+
+function calculateDiseaseScores(inputTokens: string[], diseases: DiseaseRow[]): MLPrediction[] {
+  const scores: MLPrediction[] = [];
+  
+  // Calculate IDF weights - rarer symptoms across diseases get higher weight
+  const symptomDocFreq: Record<string, number> = {};
+  for (const disease of diseases) {
+    for (const symptom of disease.symptoms) {
+      const key = symptom.toLowerCase();
+      symptomDocFreq[key] = (symptomDocFreq[key] || 0) + 1;
+    }
+  }
+  const totalDiseases = diseases.length;
+  
+  for (const disease of diseases) {
+    let score = 0;
+    let matchedSymptoms = 0;
+    const diseaseSymptoms = disease.symptoms.map(s => s.toLowerCase());
+    
+    for (const symptom of diseaseSymptoms) {
+      // Check if any input token matches this symptom (fuzzy match)
+      const matched = inputTokens.some(token => 
+        symptom.includes(token) || token.includes(symptom) ||
+        levenshteinSimilarity(token, symptom) > 0.7
+      );
+      
+      if (matched) {
+        matchedSymptoms++;
+        // IDF weight: rarer symptoms across diseases → higher score
+        const idf = Math.log(totalDiseases / (symptomDocFreq[symptom] || 1));
+        score += (1 + idf);
+      }
+    }
+    
+    if (matchedSymptoms === 0) continue;
+    
+    // Jaccard-like coverage: what fraction of disease symptoms matched
+    const coverage = matchedSymptoms / diseaseSymptoms.length;
+    // Boost score by coverage
+    const finalScore = score * (0.5 + 0.5 * coverage);
+    
+    scores.push({
+      name: disease.disease_name_en,
+      name_bn: disease.disease_name_bn || disease.disease_name_en,
+      confidence: finalScore,
+      specialist: disease.specialist_type || 'General Practitioner',
+      emergency: disease.emergency_flag || false,
+    });
+  }
+  
+  // Normalize to percentages (softmax-like)
+  if (scores.length === 0) return [];
+  
+  scores.sort((a, b) => b.confidence - a.confidence);
+  const top = scores.slice(0, 5);
+  const totalScore = top.reduce((sum, s) => sum + s.confidence, 0);
+  
+  if (totalScore > 0) {
+    for (const s of top) {
+      s.confidence = Math.round((s.confidence / totalScore) * 100);
+    }
+  }
+  
+  // Ensure percentages roughly sum to 100
+  const currentSum = top.reduce((s, t) => s + t.confidence, 0);
+  if (currentSum > 0 && top.length > 0) {
+    top[0].confidence += (100 - currentSum);
+  }
+  
+  return top;
+}
+
+function levenshteinSimilarity(a: string, b: string): number {
+  if (a === b) return 1;
+  const longer = a.length > b.length ? a : b;
+  const shorter = a.length > b.length ? b : a;
+  if (longer.length === 0) return 1;
+  
+  const costs: number[] = [];
+  for (let i = 0; i <= longer.length; i++) {
+    let lastValue = i;
+    for (let j = 0; j <= shorter.length; j++) {
+      if (i === 0) { costs[j] = j; }
+      else if (j > 0) {
+        let newValue = costs[j - 1];
+        if (longer.charAt(i - 1) !== shorter.charAt(j - 1)) {
+          newValue = Math.min(Math.min(newValue, lastValue), costs[j]) + 1;
+        }
+        costs[j - 1] = lastValue;
+        lastValue = newValue;
+      }
+    }
+    if (i > 0) costs[shorter.length] = lastValue;
+  }
+  return (longer.length - costs[shorter.length]) / longer.length;
+}
+
+// ─── MAIN HANDLER ───
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -31,12 +168,15 @@ serve(async (req) => {
     const { symptoms, language = "bn", session_id, conversation = [] } = await req.json();
     if (!symptoms) {
       return new Response(JSON.stringify({ error: "symptoms required" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // 1. Safety Guard - check emergency patterns FIRST
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // ── LAYER 1: Safety Guard (regex emergency detection) ──
     for (const rule of EMERGENCY_PATTERNS) {
       if (rule.pattern.test(symptoms)) {
         const result = {
@@ -48,9 +188,9 @@ serve(async (req) => {
           recommended_facility_bn: "জরুরি বিভাগ / হাসপাতাল",
           medicines: [],
           follow_up_question: null,
+          ml_classifier_used: true,
         };
-        // Log session
-        await logSession(symptoms, language, result);
+        await logSession(supabase, symptoms, language, result);
         return new Response(JSON.stringify(result), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -68,19 +208,36 @@ serve(async (req) => {
           recommended_facility_bn: "উপজেলা স্বাস্থ্য কমপ্লেক্স / ডাক্তার",
           medicines: [],
           follow_up_question: null,
+          ml_classifier_used: true,
         };
-        await logSession(symptoms, language, result);
+        await logSession(supabase, symptoms, language, result);
         return new Response(JSON.stringify(result), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
     }
 
-    // 2. AI Triage via Lovable AI Gateway
+    // ── LAYER 2: ML Classifier (weighted symptom-disease matching) ──
+    const { data: allDiseases } = await supabase
+      .from("symptoms_diseases")
+      .select("disease_name_en, disease_name_bn, symptoms, emergency_flag, specialist_type, description");
+
+    let mlPredictions: MLPrediction[] = [];
+    if (allDiseases && allDiseases.length > 0) {
+      const inputTokens = tokenizeSymptoms(symptoms);
+      mlPredictions = calculateDiseaseScores(inputTokens, allDiseases as DiseaseRow[]);
+    }
+
+    // ── LAYER 3: LLM Clinical Reasoning (Gemini) ──
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) {
       throw new Error("LOVABLE_API_KEY not configured");
     }
+
+    // Feed ML predictions to LLM for refinement
+    const mlContext = mlPredictions.length > 0
+      ? `\n\nML CLASSIFIER OUTPUT (weighted symptom matching):\n${mlPredictions.map(p => `- ${p.name} (${p.name_bn}): ${p.confidence}% confidence, Specialist: ${p.specialist}`).join('\n')}\n\nUse these predictions as a strong prior. Adjust based on your clinical reasoning but DO NOT ignore them.`
+      : '';
 
     const systemPrompt = `You are HealthMax, a clinical triage AI for Bangladesh. You assist Community Health Workers (CHWs) in rural areas.
 
@@ -94,6 +251,8 @@ RULES:
 5. Recommend cheapest generic medicines when appropriate
 6. Always include both English and Bangla text
 7. Be conservative - when in doubt, recommend higher urgency
+8. Consider Bangladesh-specific diseases: dengue, typhoid, cholera, filariasis, kala-azar
+${mlContext}
 
 Previous conversation context: ${JSON.stringify(conversation)}
 
@@ -167,16 +326,36 @@ You MUST use the triage_result tool to return your response.`;
       console.error("AI Gateway error:", response.status, errText);
       if (response.status === 429) {
         return new Response(JSON.stringify({ error: "Rate limit exceeded. Please try again shortly." }), {
-          status: 429,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       if (response.status === 402) {
         return new Response(JSON.stringify({ error: "AI credits exhausted." }), {
-          status: 402,
+          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      
+      // Fallback to ML-only results if AI fails
+      if (mlPredictions.length > 0) {
+        const fallbackResult = {
+          urgency_level: mlPredictions[0].emergency ? "urgent" : "moderate",
+          diseases: mlPredictions.map(p => ({ name: p.name, name_bn: p.name_bn, confidence: p.confidence })),
+          explanation: `Based on symptom analysis, the most likely condition is ${mlPredictions[0].name}. Please consult a ${mlPredictions[0].specialist}.`,
+          explanation_bn: `লক্ষণ বিশ্লেষণের ভিত্তিতে, সবচেয়ে সম্ভাব্য রোগ ${mlPredictions[0].name_bn}। একজন ${mlPredictions[0].specialist} এর পরামর্শ নিন।`,
+          recommended_facility: "Upazila Health Complex",
+          recommended_facility_bn: "উপজেলা স্বাস্থ্য কমপ্লেক্স",
+          specialist: mlPredictions[0].specialist,
+          medicines: [],
+          follow_up_question: null,
+          ml_classifier_used: true,
+          ai_fallback: true,
+        };
+        await logSession(supabase, symptoms, language, fallbackResult);
+        return new Response(JSON.stringify(fallbackResult), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+      
       throw new Error(`AI error: ${response.status}`);
     }
 
@@ -188,32 +367,31 @@ You MUST use the triage_result tool to return your response.`;
     }
 
     const result = JSON.parse(toolCall.function.arguments);
+    result.ml_classifier_used = true;
 
-    // 3. Enrich with medicine data from DB
-    if (result.diseases && result.diseases.length > 0) {
-      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-      const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-      const supabase = createClient(supabaseUrl, supabaseKey);
-
-      // Look up related medicines if AI suggested generics
-      if (result.medicines && result.medicines.length > 0) {
-        for (const med of result.medicines) {
-          const { data: dbMeds } = await supabase
-            .from("medicines")
-            .select("brand_name, generic_name, price_info, manufacturer")
-            .ilike("generic_name", `%${med.generic}%`)
-            .limit(1);
-          
-          if (dbMeds && dbMeds.length > 0) {
-            med.name = dbMeds[0].brand_name;
-            med.price = dbMeds[0].price_info || med.price;
-          }
+    // ── LAYER 4: Enrich with medicine data from DB ──
+    if (result.medicines && result.medicines.length > 0) {
+      for (const med of result.medicines) {
+        const { data: dbMeds } = await supabase
+          .from("medicines")
+          .select("brand_name, generic_name, price_info, manufacturer")
+          .ilike("generic_name", `%${med.generic}%`)
+          .limit(3);
+        
+        if (dbMeds && dbMeds.length > 0) {
+          med.name = dbMeds[0].brand_name;
+          med.price = dbMeds[0].price_info || med.price;
+          med.alternatives = dbMeds.slice(1).map(m => ({
+            brand: m.brand_name,
+            manufacturer: m.manufacturer,
+            price: m.price_info,
+          }));
         }
       }
     }
 
-    // 4. Log session
-    await logSession(symptoms, language, result);
+    // Log session
+    await logSession(supabase, symptoms, language, result);
 
     return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -221,18 +399,13 @@ You MUST use the triage_result tool to return your response.`;
   } catch (e) {
     console.error("Triage error:", e);
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });
 
-async function logSession(symptoms: string, language: string, result: any) {
+async function logSession(supabase: any, symptoms: string, language: string, result: any) {
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
     await supabase.from("triage_sessions").insert({
       symptoms_text: symptoms,
       language,

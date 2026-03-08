@@ -86,6 +86,161 @@ export type Database = {
         }
         Relationships: []
       }
+      patient_profiles: {
+        Row: {
+          address: string | null
+          age: number | null
+          allergies: string[] | null
+          blood_group: string | null
+          chronic_conditions: string[] | null
+          created_at: string
+          emergency_contact_name: string | null
+          emergency_contact_phone: string | null
+          full_name: string | null
+          gender: string | null
+          id: string
+          phone: string | null
+          preferred_doctor_id: string | null
+          session_user_id: string | null
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          address?: string | null
+          age?: number | null
+          allergies?: string[] | null
+          blood_group?: string | null
+          chronic_conditions?: string[] | null
+          created_at?: string
+          emergency_contact_name?: string | null
+          emergency_contact_phone?: string | null
+          full_name?: string | null
+          gender?: string | null
+          id?: string
+          phone?: string | null
+          preferred_doctor_id?: string | null
+          session_user_id?: string | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          address?: string | null
+          age?: number | null
+          allergies?: string[] | null
+          blood_group?: string | null
+          chronic_conditions?: string[] | null
+          created_at?: string
+          emergency_contact_name?: string | null
+          emergency_contact_phone?: string | null
+          full_name?: string | null
+          gender?: string | null
+          id?: string
+          phone?: string | null
+          preferred_doctor_id?: string | null
+          session_user_id?: string | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      prescriptions: {
+        Row: {
+          ai_generated_prescription: Json
+          created_at: string
+          diseases: Json | null
+          doctor_id: string | null
+          doctor_notes: string | null
+          doctor_revised_prescription: Json | null
+          final_prescription: Json | null
+          id: string
+          medicines: Json | null
+          notified_via_sms: boolean | null
+          patient_profile_id: string | null
+          patient_symptoms: string | null
+          preferred_doctor_id: string | null
+          signed_at: string | null
+          sms_sent_at: string | null
+          status: string
+          triage_session_id: string | null
+          triage_summary: Json | null
+          updated_at: string
+          urgency_level: string | null
+        }
+        Insert: {
+          ai_generated_prescription?: Json
+          created_at?: string
+          diseases?: Json | null
+          doctor_id?: string | null
+          doctor_notes?: string | null
+          doctor_revised_prescription?: Json | null
+          final_prescription?: Json | null
+          id?: string
+          medicines?: Json | null
+          notified_via_sms?: boolean | null
+          patient_profile_id?: string | null
+          patient_symptoms?: string | null
+          preferred_doctor_id?: string | null
+          signed_at?: string | null
+          sms_sent_at?: string | null
+          status?: string
+          triage_session_id?: string | null
+          triage_summary?: Json | null
+          updated_at?: string
+          urgency_level?: string | null
+        }
+        Update: {
+          ai_generated_prescription?: Json
+          created_at?: string
+          diseases?: Json | null
+          doctor_id?: string | null
+          doctor_notes?: string | null
+          doctor_revised_prescription?: Json | null
+          final_prescription?: Json | null
+          id?: string
+          medicines?: Json | null
+          notified_via_sms?: boolean | null
+          patient_profile_id?: string | null
+          patient_symptoms?: string | null
+          preferred_doctor_id?: string | null
+          signed_at?: string | null
+          sms_sent_at?: string | null
+          status?: string
+          triage_session_id?: string | null
+          triage_summary?: Json | null
+          updated_at?: string
+          urgency_level?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "prescriptions_doctor_id_fkey"
+            columns: ["doctor_id"]
+            isOneToOne: false
+            referencedRelation: "registered_doctors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "prescriptions_patient_profile_id_fkey"
+            columns: ["patient_profile_id"]
+            isOneToOne: false
+            referencedRelation: "patient_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "prescriptions_preferred_doctor_id_fkey"
+            columns: ["preferred_doctor_id"]
+            isOneToOne: false
+            referencedRelation: "registered_doctors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "prescriptions_triage_session_id_fkey"
+            columns: ["triage_session_id"]
+            isOneToOne: false
+            referencedRelation: "triage_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           created_at: string | null
@@ -107,6 +262,60 @@ export type Database = {
           id?: string
           organization?: string | null
           phone?: string | null
+        }
+        Relationships: []
+      }
+      registered_doctors: {
+        Row: {
+          bio: string | null
+          bmdc_reg_number: string
+          created_at: string
+          email: string | null
+          full_name: string
+          hospital_affiliation: string | null
+          id: string
+          is_available: boolean
+          is_verified: boolean
+          phone: string | null
+          specialization: string | null
+          updated_at: string
+          user_id: string
+          verified_at: string | null
+          verified_by: string | null
+        }
+        Insert: {
+          bio?: string | null
+          bmdc_reg_number: string
+          created_at?: string
+          email?: string | null
+          full_name: string
+          hospital_affiliation?: string | null
+          id?: string
+          is_available?: boolean
+          is_verified?: boolean
+          phone?: string | null
+          specialization?: string | null
+          updated_at?: string
+          user_id: string
+          verified_at?: string | null
+          verified_by?: string | null
+        }
+        Update: {
+          bio?: string | null
+          bmdc_reg_number?: string
+          created_at?: string
+          email?: string | null
+          full_name?: string
+          hospital_affiliation?: string | null
+          id?: string
+          is_available?: boolean
+          is_verified?: boolean
+          phone?: string | null
+          specialization?: string | null
+          updated_at?: string
+          user_id?: string
+          verified_at?: string | null
+          verified_by?: string | null
         }
         Relationships: []
       }
@@ -152,6 +361,8 @@ export type Database = {
           id: string
           language: string | null
           medicines_suggested: Json | null
+          patient_profile_id: string | null
+          session_user_id: string | null
           symptoms_text: string
           updated_at: string
           urgency_level: string | null
@@ -164,6 +375,8 @@ export type Database = {
           id?: string
           language?: string | null
           medicines_suggested?: Json | null
+          patient_profile_id?: string | null
+          session_user_id?: string | null
           symptoms_text: string
           updated_at?: string
           urgency_level?: string | null
@@ -176,11 +389,21 @@ export type Database = {
           id?: string
           language?: string | null
           medicines_suggested?: Json | null
+          patient_profile_id?: string | null
+          session_user_id?: string | null
           symptoms_text?: string
           updated_at?: string
           urgency_level?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "triage_sessions_patient_profile_id_fkey"
+            columns: ["patient_profile_id"]
+            isOneToOne: false
+            referencedRelation: "patient_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_roles: {
         Row: {

@@ -44,6 +44,42 @@ export type Database = {
         }
         Relationships: []
       }
+      medicine_ner: {
+        Row: {
+          common_medical_terms: string | null
+          created_at: string
+          disease: string | null
+          hormone: string | null
+          id: number
+          medical_text: string
+          medicine_name: string | null
+          organ: string | null
+          pharmacological_class: string | null
+        }
+        Insert: {
+          common_medical_terms?: string | null
+          created_at?: string
+          disease?: string | null
+          hormone?: string | null
+          id?: number
+          medical_text: string
+          medicine_name?: string | null
+          organ?: string | null
+          pharmacological_class?: string | null
+        }
+        Update: {
+          common_medical_terms?: string | null
+          created_at?: string
+          disease?: string | null
+          hormone?: string | null
+          id?: number
+          medical_text?: string
+          medicine_name?: string | null
+          organ?: string | null
+          pharmacological_class?: string | null
+        }
+        Relationships: []
+      }
       medicines: {
         Row: {
           brand_name: string
@@ -316,6 +352,51 @@ export type Database = {
           user_id?: string
           verified_at?: string | null
           verified_by?: string | null
+        }
+        Relationships: []
+      }
+      specialist_classifications: {
+        Row: {
+          created_at: string
+          gender: string | null
+          id: number
+          problem_text: string
+          specialist: string
+        }
+        Insert: {
+          created_at?: string
+          gender?: string | null
+          id?: number
+          problem_text: string
+          specialist: string
+        }
+        Update: {
+          created_at?: string
+          gender?: string | null
+          id?: number
+          problem_text?: string
+          specialist?: string
+        }
+        Relationships: []
+      }
+      symptom_disease_matrix: {
+        Row: {
+          created_at: string
+          disease_name: string
+          id: number
+          symptoms: Json
+        }
+        Insert: {
+          created_at?: string
+          disease_name: string
+          id?: number
+          symptoms?: Json
+        }
+        Update: {
+          created_at?: string
+          disease_name?: string
+          id?: number
+          symptoms?: Json
         }
         Relationships: []
       }

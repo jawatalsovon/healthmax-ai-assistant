@@ -262,6 +262,10 @@ serve(async (req) => {
       ? `\nML CLASSIFIER OUTPUT:\n${mlPredictions.map(p => `- ${p.name} (${p.name_bn}): ${p.confidence}% confidence, Specialist: ${p.specialist}`).join('\n')}`
       : '';
 
+    const specialistContext = specialistPrediction
+      ? `\nSPECIALIST PREDICTION (from classification dataset): ${specialistPrediction}`
+      : '';
+
     const patientContext = patient_info 
       ? `\nPATIENT INFO: Name: ${patient_info.full_name || 'Unknown'}, Age: ${patient_info.age || 'Unknown'}, Gender: ${patient_info.gender || 'Unknown'}, Allergies: ${(patient_info.allergies || []).join(', ') || 'None'}, Chronic conditions: ${(patient_info.chronic_conditions || []).join(', ') || 'None'}`
       : '';

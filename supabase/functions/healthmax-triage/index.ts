@@ -227,6 +227,7 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY") || "";
 
     // ── LAYER 1: Safety Guard ──
     for (const rule of EMERGENCY_PATTERNS) {

@@ -25,6 +25,50 @@ const URGENT_PATTERNS = [
   { pattern: /severe diarrhea|তীব্র ডায়রিয়া|পানিশূন্যতা/i, action_en: "Severe diarrhea/dehydration risk. Seek urgent care.", action_bn: "তীব্র ডায়রিয়া/পানিশূন্যতার ঝুঁকি। জরুরি চিকিৎসা নিন।" },
 ];
 
+// ─── BanglaBERT EMBEDDING HELPER ───
+async function getBanglaBertEmbedding(text: string): Promise<number[] | null> {
+  try {
+    const response = await fetch(
+      "https://api-inference.huggingface.co/models/csebuetnlp/banglabert",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ inputs: text, options: { wait_for_model: true } }),
+      }
+    );
+    if (!response.ok) {
+      console.warn("BanglaBERT API error:", response.status);
+      return null;
+    }
+    const data = await response.json();
+    // HF feature-extraction returns [[token_embeddings...]]; average pool to single vector
+    if (Array.isArray(data) && Array.isArray(data[0]) && Array.isArray(data[0][0])) {
+      const tokenVecs: number[][] = data[0];
+      const dim = tokenVecs[0].length;
+      const avg = new Array(dim).fill(0);
+      for (const vec of tokenVecs) {
+        for (let d = 0; d < dim; d++) avg[d] += vec[d];
+      }
+      for (let d = 0; d < dim; d++) avg[d] /= tokenVecs.length;
+      return avg;
+    }
+    return null;
+  } catch (e) {
+    console.warn("BanglaBERT fetch failed:", e);
+    return null;
+  }
+}
+
+function cosineSimilarity(a: number[], b: number[]): number {
+  let dot = 0, magA = 0, magB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    magA += a[i] * a[i];
+    magB += b[i] * b[i];
+  }
+  return dot / (Math.sqrt(magA) * Math.sqrt(magB) + 1e-8);
+}
+
 // ─── ML CLASSIFIER ───
 interface DiseaseRow {
   disease_name_en: string;

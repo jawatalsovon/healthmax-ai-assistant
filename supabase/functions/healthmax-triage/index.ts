@@ -276,7 +276,20 @@ serve(async (req) => {
           follow_up_questions: null,
           ml_classifier_used: true,
         };
-        const sessionId = await logSession(supabase, symptoms, language, result, patient_info);
+        const notesSummary = await summarizeTriageNotes(
+          LOVABLE_API_KEY,
+          language,
+          symptoms,
+          conversation,
+          result,
+          patientContextFromInfo(patient_info)
+        );
+        const sessionId = await logSession(supabase, {
+          existingSessionId: session_id,
+          language,
+          result,
+          notesSummary,
+        });
         return new Response(JSON.stringify({ ...result, session_id: sessionId }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });

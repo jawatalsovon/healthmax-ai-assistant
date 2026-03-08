@@ -30,7 +30,7 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { medicines, csv_text, clear_existing = false } = body;
+    const { medicines, csv_text, source_url, clear_existing = false, offset = 0, chunk_size = 0 } = body;
     
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -42,8 +42,47 @@ serve(async (req) => {
 
     let records: any[] = [];
 
-    if (csv_text) {
-      // Parse CSV text directly
+    if (source_url) {
+      // Fetch CSV from URL
+      const resp = await fetch(source_url);
+      if (!resp.ok) throw new Error(`Failed to fetch CSV: ${resp.status}`);
+      const text = await resp.text();
+      const allLines = text.split('\n').filter((l: string) => l.trim());
+      
+      // Support chunking: if chunk_size > 0, only process a slice
+      const lines = chunk_size > 0 ? allLines.slice(offset, offset + chunk_size) : allLines;
+      
+      records = lines.map((line: string) => {
+        const cols = parseCSVLine(line);
+        return {
+          brand_name: cols[1] || 'Unknown',
+          medicine_type: cols[2] || 'allopathic',
+          slug: cols[3] || null,
+          form: cols[4] || null,
+          generic_name: cols[5] || null,
+          strength: cols[6] || null,
+          manufacturer: cols[7] || null,
+          price_info: cols[8] || null,
+          pack_info: cols[9] || null,
+        };
+      }).filter((m: any) => m.brand_name && m.brand_name !== 'Unknown');
+      
+      // Return total line count for chunking coordination
+      if (chunk_size > 0) {
+        const batchSize = 500;
+        let inserted = 0;
+        let errors = 0;
+        for (let i = 0; i < records.length; i += batchSize) {
+          const batch = records.slice(i, i + batchSize);
+          const { error } = await supabase.from("medicines").insert(batch);
+          if (error) { console.error("Batch error:", error); errors += batch.length; }
+          else { inserted += batch.length; }
+        }
+        return new Response(JSON.stringify({ inserted, errors, total_lines: allLines.length, chunk_processed: records.length }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    } else if (csv_text) {
       const lines = csv_text.split('\n').filter((l: string) => l.trim());
       records = lines.map((line: string) => {
         const cols = parseCSVLine(line);
@@ -72,7 +111,7 @@ serve(async (req) => {
         pack_info: m.pack_info || null,
       }));
     } else {
-      return new Response(JSON.stringify({ error: "medicines array or csv_text required" }), {
+      return new Response(JSON.stringify({ error: "medicines array, csv_text, or source_url required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

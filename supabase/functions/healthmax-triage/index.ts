@@ -188,9 +188,19 @@ serve(async (req) => {
     }
 
     // ── LAYER 2: ML Classifier ──
-    const { data: allDiseases } = await supabase
-      .from("symptoms_diseases")
-      .select("disease_name_en, disease_name_bn, symptoms, emergency_flag, specialist_type, description");
+    const [
+      { data: allDiseases },
+      { data: clinicalRules },
+      { data: specialistData },
+      { data: medicineNerData },
+      { data: matrixData },
+    ] = await Promise.all([
+      supabase.from("symptoms_diseases").select("disease_name_en, disease_name_bn, symptoms, emergency_flag, specialist_type, description"),
+      supabase.from("clinical_rules").select("symptom_pattern, urgency_level, recommended_action, recommended_action_bn"),
+      supabase.from("specialist_classifications").select("problem_text, specialist, gender").limit(500),
+      supabase.from("medicine_ner").select("medicine_name, organ, disease, pharmacological_class, common_medical_terms").limit(500),
+      supabase.from("symptom_disease_matrix").select("disease_name, symptoms").limit(200),
+    ]);
 
     let mlPredictions: MLPrediction[] = [];
     if (allDiseases && allDiseases.length > 0) {
@@ -198,10 +208,42 @@ serve(async (req) => {
       mlPredictions = calculateDiseaseScores(inputTokens, allDiseases as DiseaseRow[]);
     }
 
-    // Fetch clinical rules for grounding
-    const { data: clinicalRules } = await supabase
-      .from("clinical_rules")
-      .select("symptom_pattern, urgency_level, recommended_action, recommended_action_bn");
+    // ── LAYER 2b: Specialist prediction from classification dataset ──
+    let specialistPrediction = '';
+    if (specialistData && specialistData.length > 0) {
+      const inputLower = symptoms.toLowerCase();
+      let bestMatch = { specialist: '', score: 0 };
+      for (const row of specialistData) {
+        const problemTokens = row.problem_text.toLowerCase().split(/\s+/);
+        const inputTokens = inputLower.split(/\s+/);
+        let matchCount = 0;
+        for (const pt of problemTokens) {
+          if (pt.length > 2 && inputTokens.some((it: string) => it.includes(pt) || pt.includes(it))) {
+            matchCount++;
+          }
+        }
+        const score = matchCount / Math.max(problemTokens.length, 1);
+        if (score > bestMatch.score) bestMatch = { specialist: row.specialist, score };
+      }
+      if (bestMatch.score > 0.3) specialistPrediction = bestMatch.specialist;
+    }
+
+    // ── LAYER 2c: Medicine NER context ──
+    let medicineNerContext = '';
+    if (medicineNerData && medicineNerData.length > 0) {
+      // Find NER entries matching mentioned diseases/symptoms
+      const inputLower = symptoms.toLowerCase();
+      const relevantNer = medicineNerData.filter((ner: any) => {
+        if (!ner.disease) return false;
+        const diseases = ner.disease.toLowerCase().split(',').map((d: string) => d.trim());
+        return diseases.some((d: string) => d.length > 2 && inputLower.includes(d));
+      }).slice(0, 10);
+      
+      if (relevantNer.length > 0) {
+        medicineNerContext = '\nMEDICINE-DISEASE KNOWLEDGE (from NER dataset):\n' + 
+          relevantNer.map((n: any) => `- Medicine: ${n.medicine_name || 'N/A'} | Disease: ${n.disease} | Class: ${n.pharmacological_class || 'N/A'} | Organ: ${n.organ || 'N/A'}`).join('\n');
+      }
+    }
 
     // Build disease knowledge base for anti-hallucination
     const diseaseKnowledgeBase = allDiseases ? allDiseases.map((d: any) => 

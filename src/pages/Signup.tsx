@@ -54,7 +54,19 @@ export default function Signup() {
 
     setLoading(true);
     const effectiveRole = wantsDoctorReg ? 'healthcare_professional' : role;
-    const { error } = await signUp(email, password, fullName, effectiveRole as any, organization);
+    const { error } = await signUp(email, password, fullName, effectiveRole as any, organization, {
+      doctor_registration: wantsDoctorReg
+        ? {
+            requested: true,
+            bmdc_reg_number: bmdcNumber,
+            specialization: specialization || undefined,
+            phone: phone || undefined,
+            email,
+            hospital_affiliation: hospitalAffiliation || undefined,
+            bio: bio || undefined,
+          }
+        : undefined,
+    });
 
     if (error) {
       toast({ title: lang === 'bn' ? 'রেজিস্ট্রেশন ব্যর্থ' : 'Signup Failed', description: error.message, variant: 'destructive' });
@@ -62,29 +74,15 @@ export default function Signup() {
       return;
     }
 
-    // If doctor registration requested, create registered_doctors entry
-    if (wantsDoctorReg) {
-      // Get the user that was just created
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        await supabase.from('registered_doctors').insert({
-          user_id: session.user.id,
-          full_name: fullName,
-          bmdc_reg_number: bmdcNumber,
-          specialization: specialization || null,
-          phone: phone || null,
-          email,
-          hospital_affiliation: hospitalAffiliation || null,
-          bio: bio || null,
-        });
-      }
-    }
-
     setLoading(false);
     toast({
       title: lang === 'bn'
-        ? wantsDoctorReg ? 'রেজিস্ট্রেশন সফল! অ্যাডমিন অনুমোদনের জন্য অপেক্ষা করুন।' : 'রেজিস্ট্রেশন সফল! ইমেইল যাচাই করুন।'
-        : wantsDoctorReg ? 'Signup successful! Awaiting admin approval for doctor registration.' : 'Signup successful! Please verify your email.',
+        ? wantsDoctorReg
+          ? 'রেজিস্ট্রেশন সফল! ইমেইল ভেরিফাই করে লগইন করলে আপনার ডাক্তার আবেদন অ্যাডমিন প্যানেলে যাবে।'
+          : 'রেজিস্ট্রেশন সফল! ইমেইল যাচাই করুন।'
+        : wantsDoctorReg
+          ? 'Signup successful! After email verification and first login, your doctor request will appear in admin pending list.'
+          : 'Signup successful! Please verify your email.',
     });
     navigate('/login');
   };

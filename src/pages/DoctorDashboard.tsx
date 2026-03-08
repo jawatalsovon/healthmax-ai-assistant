@@ -45,8 +45,7 @@ export default function DoctorDashboard() {
       const { data } = await supabase
         .from('prescriptions')
         .select('*')
-        .in('status', ['pending_review', 'under_review'])
-        .or(`preferred_doctor_id.eq.${doctor.id},preferred_doctor_id.is.null,doctor_id.eq.${doctor.id}`)
+        .or(`and(status.eq.pending_review,preferred_doctor_id.eq.${doctor.id}),and(status.eq.pending_review,preferred_doctor_id.is.null),and(status.eq.pending_review,doctor_id.eq.${doctor.id}),and(status.eq.under_review,doctor_id.eq.${doctor.id})`)
         .order('created_at', { ascending: false })
         .limit(50);
       return data || [];

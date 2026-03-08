@@ -17,6 +17,9 @@ export function Navbar() {
     { to: '/triage', label: t('startTriage'), icon: Activity },
     { to: '/medicines', label: t('medicinSearch'), icon: Search },
     { to: '/dashboard', label: t('dashboard'), icon: BarChart3 },
+    ...(role === 'healthcare_professional' ? [
+      { to: '/doctor', label: lang === 'bn' ? 'ডাক্তার প্যানেল' : 'Doctor Panel', icon: Stethoscope },
+    ] : []),
     { to: '/about', label: t('about'), icon: Info },
   ];
 

@@ -2,7 +2,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
-import { Activity, Search, BarChart3, Info, Menu, X, LogIn, LogOut, User, Stethoscope } from 'lucide-react';
+import { Activity, Search, BarChart3, Info, Menu, X, LogIn, LogOut, User, Stethoscope, FileText } from 'lucide-react';
 import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 
@@ -17,6 +17,9 @@ export function Navbar() {
     { to: '/triage', label: t('startTriage'), icon: Activity },
     { to: '/medicines', label: t('medicinSearch'), icon: Search },
     { to: '/dashboard', label: t('dashboard'), icon: BarChart3 },
+    ...(role === 'healthcare_professional' ? [
+      { to: '/doctor', label: lang === 'bn' ? 'ডাক্তার প্যানেল' : 'Doctor Panel', icon: Stethoscope },
+    ] : []),
     { to: '/about', label: t('about'), icon: Info },
   ];
 

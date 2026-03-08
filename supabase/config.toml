@@ -8,3 +8,9 @@ verify_jwt = false
 
 [functions.medicine-import]
 verify_jwt = false
+
+[functions.twilio-voice]
+verify_jwt = false
+
+[functions.send-sms]
+verify_jwt = false

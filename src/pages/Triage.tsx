@@ -1,54 +1,19 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent } from '@/components/ui/card';
 import { UrgencyBadge } from '@/components/UrgencyBadge';
 import { ConfidenceBar } from '@/components/ConfidenceBar';
-import { Mic, MicOff, Send, Loader2, AlertTriangle, Brain, Shield, Pill } from 'lucide-react';
+import { Mic, MicOff, Send, Loader2, AlertTriangle, Brain, Shield, Pill, FileText } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
-
-interface Disease {
-  name: string;
-  name_bn: string;
-  confidence: number;
-}
-
-interface MedicineAlt {
-  brand: string;
-  manufacturer: string;
-  price: string;
-}
-
-interface Medicine {
-  name: string;
-  generic: string;
-  price: string;
-  alternatives?: MedicineAlt[];
-}
-
-interface TriageResult {
-  urgency_level: string;
-  diseases: Disease[];
-  follow_up_question?: string;
-  follow_up_question_bn?: string;
-  recommended_facility?: string;
-  recommended_facility_bn?: string;
-  specialist?: string;
-  medicines?: Medicine[];
-  explanation?: string;
-  explanation_bn?: string;
-  ml_classifier_used?: boolean;
-  ai_fallback?: boolean;
-}
-
-interface Message {
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  result?: TriageResult;
-}
+import { TriageResult, Message, FollowUpQuestion } from '@/types/triage';
+import { PatientInfoForm } from '@/components/PatientInfoForm';
+import { FollowUpQuestions } from '@/components/FollowUpQuestions';
+import { TriageResultCard } from '@/components/TriageResultCard';
+import { PrescriptionRequest } from '@/components/PrescriptionRequest';
 
 export default function Triage() {
   const { t, lang } = useLanguage();
@@ -58,21 +23,29 @@ export default function Triage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [showPatientForm, setShowPatientForm] = useState(true);
+  const [patientInfo, setPatientInfo] = useState<any>(null);
+  const [latestResult, setLatestResult] = useState<TriageResult | null>(null);
   const recognitionRef = useRef<any>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isLoading]);
 
   const startVoiceInput = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      toast({ title: 'Speech recognition not supported', variant: 'destructive' });
+      toast({ title: lang === 'bn' ? 'স্পিচ রিকগনিশন সাপোর্ট করে না' : 'Speech recognition not supported', variant: 'destructive' });
       return;
     }
     const recognition = new SpeechRecognition();
     recognition.lang = lang === 'bn' ? 'bn-BD' : 'en-US';
-    recognition.continuous = false;
+    recognition.continuous = true;
     recognition.interimResults = false;
     recognition.onresult = (event: any) => {
-      const text = event.results[0][0].transcript;
-      setInput(prev => prev + ' ' + text);
+      const text = event.results[event.results.length - 1][0].transcript;
+      setInput(prev => (prev ? prev + ' ' : '') + text);
     };
     recognition.onend = () => setIsRecording(false);
     recognition.onerror = () => setIsRecording(false);
@@ -102,6 +75,7 @@ export default function Triage() {
           language: lang,
           session_id: sessionId,
           conversation: messages.map(m => ({ role: m.role, content: m.content })),
+          patient_info: patientInfo,
         },
       });
 
@@ -114,6 +88,7 @@ export default function Triage() {
         result: data,
       };
       setMessages(prev => [...prev, assistantMsg]);
+      setLatestResult(data);
     } catch (err: any) {
       toast({
         title: lang === 'bn' ? 'ত্রুটি হয়েছে' : 'Error occurred',
@@ -125,7 +100,20 @@ export default function Triage() {
     }
   };
 
-  const handleFollowUp = (answer: string) => sendMessage(answer);
+  const handleFollowUpAnswer = (answer: string) => sendMessage(answer);
+
+  const handlePatientInfoSubmit = (info: any) => {
+    setPatientInfo(info);
+    setShowPatientForm(false);
+  };
+
+  const handleSkipPatientForm = () => {
+    setShowPatientForm(false);
+  };
+
+  if (showPatientForm) {
+    return <PatientInfoForm onSubmit={handlePatientInfoSubmit} onSkip={handleSkipPatientForm} />;
+  }
 
   return (
     <div className="container mx-auto px-4 py-6 max-w-3xl">
@@ -133,10 +121,15 @@ export default function Triage() {
         <AlertTriangle className="h-6 w-6 text-primary" />
         {lang === 'bn' ? 'স্বাস্থ্য ট্রায়াজ' : 'Health Triage'}
       </h1>
-      <div className="flex gap-2 mb-6">
+      <div className="flex gap-2 mb-6 flex-wrap">
         <Badge variant="outline" className="gap-1 text-xs"><Shield className="h-3 w-3" />{lang === 'bn' ? 'নিরাপত্তা গার্ড' : 'Safety Guard'}</Badge>
         <Badge variant="outline" className="gap-1 text-xs"><Brain className="h-3 w-3" />{lang === 'bn' ? 'ML ক্লাসিফায়ার' : 'ML Classifier'}</Badge>
         <Badge variant="outline" className="gap-1 text-xs"><Pill className="h-3 w-3" />{lang === 'bn' ? 'ওষুধ পরামর্শ' : 'Medicine Advice'}</Badge>
+        {patientInfo && (
+          <Badge variant="secondary" className="gap-1 text-xs">
+            {patientInfo.full_name || (lang === 'bn' ? 'রোগী' : 'Patient')}
+          </Badge>
+        )}
       </div>
 
       {/* Conversation */}
@@ -147,14 +140,10 @@ export default function Triage() {
               <AlertTriangle className="h-8 w-8 text-primary" />
             </div>
             <p className="text-lg mb-2">
-              {lang === 'bn'
-                ? 'আপনার লক্ষণগুলো নিচে লিখুন বা বলুন'
-                : 'Type or speak your symptoms below'}
+              {lang === 'bn' ? 'আপনার লক্ষণগুলো নিচে লিখুন বা বলুন' : 'Type or speak your symptoms below'}
             </p>
             <p className="text-sm">
-              {lang === 'bn'
-                ? 'উদাহরণ: "আমার মাথা ব্যথা, জ্বর আছে, শরীর ব্যথা"'
-                : 'Example: "I have headache, fever, and body ache"'}
+              {lang === 'bn' ? 'উদাহরণ: "আমার মাথা ব্যথা, জ্বর আছে, শরীর ব্যথা"' : 'Example: "I have headache, fever, and body ache"'}
             </p>
           </div>
         )}
@@ -169,82 +158,26 @@ export default function Triage() {
 
               {msg.result && (
                 <div className="space-y-4 mt-3">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <UrgencyBadge level={msg.result.urgency_level} />
-                    {msg.result.ml_classifier_used && (
-                      <Badge variant="secondary" className="text-xs gap-1">
-                        <Brain className="h-3 w-3" />
-                        {msg.result.ai_fallback ? 'ML Only' : 'ML + AI'}
-                      </Badge>
-                    )}
-                  </div>
+                  <TriageResultCard result={msg.result} lang={lang} t={t} />
 
-                  {msg.result.diseases && msg.result.diseases.length > 0 && (
-                    <div className="space-y-2">
-                      <p className="text-xs font-semibold text-muted-foreground uppercase">{t('topDiseases')}</p>
-                      {msg.result.diseases.map((d, j) => (
-                        <ConfidenceBar
-                          key={j}
-                          label={lang === 'bn' ? d.name_bn || d.name : d.name}
-                          value={d.confidence}
-                        />
-                      ))}
-                    </div>
+                  {/* Follow-up questions (2-3 at once) */}
+                  {msg.result.follow_up_questions && msg.result.follow_up_questions.length > 0 && (
+                    <FollowUpQuestions
+                      questions={msg.result.follow_up_questions}
+                      lang={lang}
+                      onSubmitAnswers={handleFollowUpAnswer}
+                      disabled={isLoading}
+                    />
                   )}
 
-                  {msg.result.specialist && (
-                    <div className="text-sm">
-                      <span className="font-semibold font-bangla">{t('specialist')}: </span>
-                      <span className="font-bangla">{msg.result.specialist}</span>
-                    </div>
-                  )}
-
-                  {msg.result.recommended_facility && (
-                    <div className="text-sm">
-                      <span className="font-semibold font-bangla">{t('recommendedFacility')}: </span>
-                      <span className="font-bangla">{lang === 'bn' ? msg.result.recommended_facility_bn || msg.result.recommended_facility : msg.result.recommended_facility}</span>
-                    </div>
-                  )}
-
-                  {msg.result.medicines && msg.result.medicines.length > 0 && (
-                    <div className="space-y-2">
-                      <p className="text-xs font-semibold text-muted-foreground uppercase">{t('suggestedMedicines')}</p>
-                      {msg.result.medicines.map((m, j) => (
-                        <div key={j} className="text-xs bg-muted rounded-lg p-2.5 space-y-1">
-                          <div>
-                            <span className="font-semibold">{m.name}</span>
-                            <span className="text-muted-foreground"> ({m.generic})</span>
-                          </div>
-                          <div className="text-primary font-medium">{m.price}</div>
-                          {m.alternatives && m.alternatives.length > 0 && (
-                            <div className="border-t pt-1 mt-1">
-                              <span className="text-muted-foreground">{lang === 'bn' ? 'বিকল্প:' : 'Alternatives:'}</span>
-                              {m.alternatives.map((alt, k) => (
-                                <span key={k} className="ml-1">{alt.brand} ({alt.price})</span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {msg.result.follow_up_question && (
-                    <Card className="bg-secondary/50 border-0">
-                      <CardContent className="pt-4 pb-3">
-                        <p className="font-bangla text-sm mb-3">
-                          {lang === 'bn' ? msg.result.follow_up_question_bn || msg.result.follow_up_question : msg.result.follow_up_question}
-                        </p>
-                        <div className="flex gap-2">
-                          <Button size="sm" onClick={() => handleFollowUp(lang === 'bn' ? 'হ্যাঁ' : 'Yes')}>
-                            {t('followUpYes')}
-                          </Button>
-                          <Button size="sm" variant="outline" onClick={() => handleFollowUp(lang === 'bn' ? 'না' : 'No')}>
-                            {t('followUpNo')}
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
+                  {/* Prescription option */}
+                  {msg.result.can_generate_prescription && sessionId && (
+                    <PrescriptionRequest
+                      sessionId={sessionId}
+                      triageResult={msg.result}
+                      patientInfo={patientInfo}
+                      lang={lang}
+                    />
                   )}
 
                   <p className="text-xs text-muted-foreground italic font-bangla border-t pt-2">
@@ -264,6 +197,7 @@ export default function Triage() {
             </div>
           </div>
         )}
+        <div ref={chatEndRef} />
       </div>
 
       {/* Input */}

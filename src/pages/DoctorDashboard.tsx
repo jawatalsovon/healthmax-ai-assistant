@@ -50,8 +50,8 @@ export default function DoctorDashboard() {
         .limit(50);
       return data || [];
     },
-    enabled: !!doctor,
-    refetchInterval: 10000,
+    enabled: !!doctor?.is_verified,
+    refetchInterval: doctor?.is_verified ? 10000 : false,
   });
 
   // Real-time subscription for new prescriptions

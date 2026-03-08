@@ -1,11 +1,14 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
-import { Activity, Search, BarChart3, Info, Menu, X } from 'lucide-react';
+import { Activity, Search, BarChart3, Info, Menu, X, LogIn, LogOut, User, Stethoscope } from 'lucide-react';
 import { useState } from 'react';
+import { Badge } from '@/components/ui/badge';
 
 export function Navbar() {
   const { lang, setLang, t } = useLanguage();
+  const { user, role, profile, signOut } = useAuth();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -52,6 +55,35 @@ export function Navbar() {
           >
             {lang === 'bn' ? 'EN' : 'বাং'}
           </Button>
+
+          {user ? (
+            <div className="flex items-center gap-2">
+              <div className="hidden sm:flex items-center gap-1.5">
+                {role === 'healthcare_professional' ? (
+                  <Badge variant="default" className="gap-1 text-xs">
+                    <Stethoscope className="h-3 w-3" />
+                    {lang === 'bn' ? 'স্বাস্থ্যকর্মী' : 'Healthcare Pro'}
+                  </Badge>
+                ) : (
+                  <Badge variant="secondary" className="gap-1 text-xs">
+                    <User className="h-3 w-3" />
+                    {profile?.full_name || (lang === 'bn' ? 'ব্যবহারকারী' : 'User')}
+                  </Badge>
+                )}
+              </div>
+              <Button variant="ghost" size="icon" onClick={signOut} title={lang === 'bn' ? 'লগআউট' : 'Sign Out'}>
+                <LogOut className="h-4 w-4" />
+              </Button>
+            </div>
+          ) : (
+            <Link to="/login">
+              <Button variant="ghost" size="sm" className="gap-1.5 font-bangla">
+                <LogIn className="h-4 w-4" />
+                <span className="hidden sm:inline">{lang === 'bn' ? 'লগইন' : 'Login'}</span>
+              </Button>
+            </Link>
+          )}
+
           <Button
             variant="ghost"
             size="icon"
@@ -78,6 +110,14 @@ export function Navbar() {
               </Button>
             </Link>
           ))}
+          {!user && (
+            <Link to="/login" onClick={() => setMobileOpen(false)}>
+              <Button variant="ghost" size="sm" className="w-full justify-start gap-2 font-bangla">
+                <LogIn className="h-4 w-4" />
+                {lang === 'bn' ? 'লগইন' : 'Login'}
+              </Button>
+            </Link>
+          )}
         </div>
       )}
     </nav>

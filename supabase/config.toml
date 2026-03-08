@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.medicine-search]
 verify_jwt = false
+
+[functions.medicine-import]
+verify_jwt = false

@@ -2,17 +2,31 @@ import { useState, useRef } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { UrgencyBadge } from '@/components/UrgencyBadge';
 import { ConfidenceBar } from '@/components/ConfidenceBar';
-import { Mic, MicOff, Send, Loader2, AlertTriangle } from 'lucide-react';
+import { Mic, MicOff, Send, Loader2, AlertTriangle, Brain, Shield, Pill } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { Badge } from '@/components/ui/badge';
 
 interface Disease {
   name: string;
   name_bn: string;
   confidence: number;
+}
+
+interface MedicineAlt {
+  brand: string;
+  manufacturer: string;
+  price: string;
+}
+
+interface Medicine {
+  name: string;
+  generic: string;
+  price: string;
+  alternatives?: MedicineAlt[];
 }
 
 interface TriageResult {
@@ -23,9 +37,11 @@ interface TriageResult {
   recommended_facility?: string;
   recommended_facility_bn?: string;
   specialist?: string;
-  medicines?: Array<{ name: string; generic: string; price: string }>;
+  medicines?: Medicine[];
   explanation?: string;
   explanation_bn?: string;
+  ml_classifier_used?: boolean;
+  ai_fallback?: boolean;
 }
 
 interface Message {
@@ -90,7 +106,6 @@ export default function Triage() {
       });
 
       if (error) throw error;
-
       if (data.session_id) setSessionId(data.session_id);
 
       const assistantMsg: Message = {
@@ -110,24 +125,37 @@ export default function Triage() {
     }
   };
 
-  const handleFollowUp = (answer: string) => {
-    sendMessage(answer);
-  };
+  const handleFollowUp = (answer: string) => sendMessage(answer);
 
   return (
     <div className="container mx-auto px-4 py-6 max-w-3xl">
-      <h1 className="text-2xl font-bold font-bangla mb-6 flex items-center gap-2">
+      <h1 className="text-2xl font-bold font-bangla mb-2 flex items-center gap-2">
         <AlertTriangle className="h-6 w-6 text-primary" />
         {lang === 'bn' ? 'স্বাস্থ্য ট্রায়াজ' : 'Health Triage'}
       </h1>
+      <div className="flex gap-2 mb-6">
+        <Badge variant="outline" className="gap-1 text-xs"><Shield className="h-3 w-3" />{lang === 'bn' ? 'নিরাপত্তা গার্ড' : 'Safety Guard'}</Badge>
+        <Badge variant="outline" className="gap-1 text-xs"><Brain className="h-3 w-3" />{lang === 'bn' ? 'ML ক্লাসিফায়ার' : 'ML Classifier'}</Badge>
+        <Badge variant="outline" className="gap-1 text-xs"><Pill className="h-3 w-3" />{lang === 'bn' ? 'ওষুধ পরামর্শ' : 'Medicine Advice'}</Badge>
+      </div>
 
       {/* Conversation */}
       <div className="space-y-4 mb-6 min-h-[200px]">
         {messages.length === 0 && (
           <div className="text-center text-muted-foreground py-12 font-bangla">
-            {lang === 'bn'
-              ? 'আপনার লক্ষণগুলো নিচে লিখুন বা বলুন। উদাহরণ: "আমার মাথা ব্যথা, জ্বর আছে"'
-              : 'Type or speak your symptoms below. Example: "I have headache and fever"'}
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
+              <AlertTriangle className="h-8 w-8 text-primary" />
+            </div>
+            <p className="text-lg mb-2">
+              {lang === 'bn'
+                ? 'আপনার লক্ষণগুলো নিচে লিখুন বা বলুন'
+                : 'Type or speak your symptoms below'}
+            </p>
+            <p className="text-sm">
+              {lang === 'bn'
+                ? 'উদাহরণ: "আমার মাথা ব্যথা, জ্বর আছে, শরীর ব্যথা"'
+                : 'Example: "I have headache, fever, and body ache"'}
+            </p>
           </div>
         )}
 
@@ -141,7 +169,15 @@ export default function Triage() {
 
               {msg.result && (
                 <div className="space-y-4 mt-3">
-                  <UrgencyBadge level={msg.result.urgency_level} />
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <UrgencyBadge level={msg.result.urgency_level} />
+                    {msg.result.ml_classifier_used && (
+                      <Badge variant="secondary" className="text-xs gap-1">
+                        <Brain className="h-3 w-3" />
+                        {msg.result.ai_fallback ? 'ML Only' : 'ML + AI'}
+                      </Badge>
+                    )}
+                  </div>
 
                   {msg.result.diseases && msg.result.diseases.length > 0 && (
                     <div className="space-y-2">
@@ -156,6 +192,13 @@ export default function Triage() {
                     </div>
                   )}
 
+                  {msg.result.specialist && (
+                    <div className="text-sm">
+                      <span className="font-semibold font-bangla">{t('specialist')}: </span>
+                      <span className="font-bangla">{msg.result.specialist}</span>
+                    </div>
+                  )}
+
                   {msg.result.recommended_facility && (
                     <div className="text-sm">
                       <span className="font-semibold font-bangla">{t('recommendedFacility')}: </span>
@@ -164,12 +207,23 @@ export default function Triage() {
                   )}
 
                   {msg.result.medicines && msg.result.medicines.length > 0 && (
-                    <div className="space-y-1">
+                    <div className="space-y-2">
                       <p className="text-xs font-semibold text-muted-foreground uppercase">{t('suggestedMedicines')}</p>
                       {msg.result.medicines.map((m, j) => (
-                        <div key={j} className="text-xs bg-muted rounded-lg p-2">
-                          <span className="font-semibold">{m.name}</span>
-                          <span className="text-muted-foreground"> ({m.generic}) — {m.price}</span>
+                        <div key={j} className="text-xs bg-muted rounded-lg p-2.5 space-y-1">
+                          <div>
+                            <span className="font-semibold">{m.name}</span>
+                            <span className="text-muted-foreground"> ({m.generic})</span>
+                          </div>
+                          <div className="text-primary font-medium">{m.price}</div>
+                          {m.alternatives && m.alternatives.length > 0 && (
+                            <div className="border-t pt-1 mt-1">
+                              <span className="text-muted-foreground">{lang === 'bn' ? 'বিকল্প:' : 'Alternatives:'}</span>
+                              {m.alternatives.map((alt, k) => (
+                                <span key={k} className="ml-1">{alt.brand} ({alt.price})</span>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>

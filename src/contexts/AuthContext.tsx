@@ -69,7 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  const signUp = async (email: string, password: string, fullName: string, userRole: 'healthcare_professional' | 'regular_user', organization?: string) => {
+  const signUp = async (email: string, password: string, fullName: string, userRole: 'healthcare_professional' | 'regular_user' | 'admin', organization?: string) => {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,

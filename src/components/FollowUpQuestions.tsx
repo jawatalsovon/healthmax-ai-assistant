@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { FollowUpQuestion } from '@/types/triage';
+import { Mic, MicOff } from 'lucide-react';
 
 interface Props {
   questions: FollowUpQuestion[];
@@ -14,6 +15,8 @@ interface Props {
 export function FollowUpQuestions({ questions, lang, onSubmitAnswers, disabled }: Props) {
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [submitted, setSubmitted] = useState(false);
+  const [recordingIndex, setRecordingIndex] = useState<number | null>(null);
+  const recognitionRef = useRef<any>(null);
 
   if (submitted) return null;
 
@@ -25,6 +28,29 @@ export function FollowUpQuestions({ questions, lang, onSubmitAnswers, disabled }
     }).join('\n\n');
     setSubmitted(true);
     onSubmitAnswers(combined);
+  };
+
+  const startVoice = (index: number) => {
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) return;
+    const recognition = new SR();
+    recognition.lang = lang === 'bn' ? 'bn-BD' : 'en-US';
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.onresult = (event: any) => {
+      const text = event.results[event.results.length - 1][0].transcript;
+      setAnswers(p => ({ ...p, [index]: (p[index] || '') + (p[index] ? ' ' : '') + text }));
+    };
+    recognition.onend = () => setRecordingIndex(null);
+    recognition.onerror = () => setRecordingIndex(null);
+    recognition.start();
+    setRecordingIndex(index);
+    recognitionRef.current = recognition;
+  };
+
+  const stopVoice = () => {
+    recognitionRef.current?.stop();
+    setRecordingIndex(null);
   };
 
   const allAnswered = questions.every((_, i) => answers[i]);
@@ -77,13 +103,24 @@ export function FollowUpQuestions({ questions, lang, onSubmitAnswers, disabled }
                 ))}
               </div>
             ) : (
-              <Input
-                value={answers[i] || ''}
-                onChange={e => setAnswers(p => ({ ...p, [i]: e.target.value }))}
-                placeholder={lang === 'bn' ? 'আপনার উত্তর লিখুন...' : 'Type your answer...'}
-                className="font-bangla text-sm"
-                disabled={disabled}
-              />
+              <div className="flex gap-2">
+                <Input
+                  value={answers[i] || ''}
+                  onChange={e => setAnswers(p => ({ ...p, [i]: e.target.value }))}
+                  placeholder={lang === 'bn' ? 'আপনার উত্তর লিখুন বা বলুন...' : 'Type or speak your answer...'}
+                  className="font-bangla text-sm"
+                  disabled={disabled}
+                />
+                <Button
+                  size="icon"
+                  variant={recordingIndex === i ? 'destructive' : 'outline'}
+                  onClick={recordingIndex === i ? stopVoice : () => startVoice(i)}
+                  disabled={disabled || (recordingIndex !== null && recordingIndex !== i)}
+                  className="shrink-0 h-9 w-9"
+                >
+                  {recordingIndex === i ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                </Button>
+              </div>
             )}
           </div>
         ))}

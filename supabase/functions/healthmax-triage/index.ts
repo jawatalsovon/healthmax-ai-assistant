@@ -25,6 +25,50 @@ const URGENT_PATTERNS = [
   { pattern: /severe diarrhea|তীব্র ডায়রিয়া|পানিশূন্যতা/i, action_en: "Severe diarrhea/dehydration risk. Seek urgent care.", action_bn: "তীব্র ডায়রিয়া/পানিশূন্যতার ঝুঁকি। জরুরি চিকিৎসা নিন।" },
 ];
 
+// ─── BanglaBERT EMBEDDING HELPER ───
+async function getBanglaBertEmbedding(text: string): Promise<number[] | null> {
+  try {
+    const response = await fetch(
+      "https://api-inference.huggingface.co/models/csebuetnlp/banglabert",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ inputs: text, options: { wait_for_model: true } }),
+      }
+    );
+    if (!response.ok) {
+      console.warn("BanglaBERT API error:", response.status);
+      return null;
+    }
+    const data = await response.json();
+    // HF feature-extraction returns [[token_embeddings...]]; average pool to single vector
+    if (Array.isArray(data) && Array.isArray(data[0]) && Array.isArray(data[0][0])) {
+      const tokenVecs: number[][] = data[0];
+      const dim = tokenVecs[0].length;
+      const avg = new Array(dim).fill(0);
+      for (const vec of tokenVecs) {
+        for (let d = 0; d < dim; d++) avg[d] += vec[d];
+      }
+      for (let d = 0; d < dim; d++) avg[d] /= tokenVecs.length;
+      return avg;
+    }
+    return null;
+  } catch (e) {
+    console.warn("BanglaBERT fetch failed:", e);
+    return null;
+  }
+}
+
+function cosineSimilarity(a: number[], b: number[]): number {
+  let dot = 0, magA = 0, magB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    magA += a[i] * a[i];
+    magB += b[i] * b[i];
+  }
+  return dot / (Math.sqrt(magA) * Math.sqrt(magB) + 1e-8);
+}
+
 // ─── ML CLASSIFIER ───
 interface DiseaseRow {
   disease_name_en: string;
@@ -241,9 +285,49 @@ serve(async (req) => {
     ]);
 
     let mlPredictions: MLPrediction[] = [];
+    let banglaBertUsed = false;
     if (allDiseases && allDiseases.length > 0) {
       const inputTokens = tokenizeSymptoms(symptoms);
-      mlPredictions = calculateDiseaseScores(inputTokens, allDiseases as DiseaseRow[]);
+      
+      // Try BanglaBERT embeddings for Bangla input
+      const isBangla = /[\u0980-\u09FF]/.test(symptoms);
+      if (isBangla) {
+        console.log("[BanglaBERT] Attempting embedding-based matching for Bangla input...");
+        const inputEmb = await getBanglaBertEmbedding(symptoms);
+        if (inputEmb) {
+          // Get embeddings for each disease's Bangla name + symptoms
+          const embeddingScores: { disease: DiseaseRow; score: number }[] = [];
+          // Batch: get embeddings for top disease names (limit to avoid rate limits)
+          const candidateDiseases = (allDiseases as DiseaseRow[]).slice(0, 50);
+          for (const disease of candidateDiseases) {
+            const diseaseText = disease.disease_name_bn || disease.disease_name_en;
+            const diseaseEmb = await getBanglaBertEmbedding(diseaseText);
+            if (diseaseEmb) {
+              const sim = cosineSimilarity(inputEmb, diseaseEmb);
+              embeddingScores.push({ disease, score: sim });
+            }
+          }
+          if (embeddingScores.length > 0) {
+            embeddingScores.sort((a, b) => b.score - a.score);
+            const top5 = embeddingScores.slice(0, 5);
+            const totalScore = top5.reduce((s, t) => s + Math.max(0, t.score), 0);
+            mlPredictions = top5.map(item => ({
+              name: item.disease.disease_name_en,
+              name_bn: item.disease.disease_name_bn || item.disease.disease_name_en,
+              confidence: totalScore > 0 ? Math.round((Math.max(0, item.score) / totalScore) * 100) : 20,
+              specialist: item.disease.specialist_type || 'General Practitioner',
+              emergency: item.disease.emergency_flag || false,
+            }));
+            banglaBertUsed = true;
+            console.log("[BanglaBERT] Embedding matching succeeded, top match:", mlPredictions[0]?.name);
+          }
+        }
+      }
+      
+      // Fallback to TF-IDF + Levenshtein
+      if (!banglaBertUsed) {
+        mlPredictions = calculateDiseaseScores(inputTokens, allDiseases as DiseaseRow[]);
+      }
     }
 
     // Specialist prediction

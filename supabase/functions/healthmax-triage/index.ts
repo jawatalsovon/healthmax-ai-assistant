@@ -285,9 +285,49 @@ serve(async (req) => {
     ]);
 
     let mlPredictions: MLPrediction[] = [];
+    let banglaBertUsed = false;
     if (allDiseases && allDiseases.length > 0) {
       const inputTokens = tokenizeSymptoms(symptoms);
-      mlPredictions = calculateDiseaseScores(inputTokens, allDiseases as DiseaseRow[]);
+      
+      // Try BanglaBERT embeddings for Bangla input
+      const isBangla = /[\u0980-\u09FF]/.test(symptoms);
+      if (isBangla) {
+        console.log("[BanglaBERT] Attempting embedding-based matching for Bangla input...");
+        const inputEmb = await getBanglaBertEmbedding(symptoms);
+        if (inputEmb) {
+          // Get embeddings for each disease's Bangla name + symptoms
+          const embeddingScores: { disease: DiseaseRow; score: number }[] = [];
+          // Batch: get embeddings for top disease names (limit to avoid rate limits)
+          const candidateDiseases = (allDiseases as DiseaseRow[]).slice(0, 50);
+          for (const disease of candidateDiseases) {
+            const diseaseText = disease.disease_name_bn || disease.disease_name_en;
+            const diseaseEmb = await getBanglaBertEmbedding(diseaseText);
+            if (diseaseEmb) {
+              const sim = cosineSimilarity(inputEmb, diseaseEmb);
+              embeddingScores.push({ disease, score: sim });
+            }
+          }
+          if (embeddingScores.length > 0) {
+            embeddingScores.sort((a, b) => b.score - a.score);
+            const top5 = embeddingScores.slice(0, 5);
+            const totalScore = top5.reduce((s, t) => s + Math.max(0, t.score), 0);
+            mlPredictions = top5.map(item => ({
+              name: item.disease.disease_name_en,
+              name_bn: item.disease.disease_name_bn || item.disease.disease_name_en,
+              confidence: totalScore > 0 ? Math.round((Math.max(0, item.score) / totalScore) * 100) : 20,
+              specialist: item.disease.specialist_type || 'General Practitioner',
+              emergency: item.disease.emergency_flag || false,
+            }));
+            banglaBertUsed = true;
+            console.log("[BanglaBERT] Embedding matching succeeded, top match:", mlPredictions[0]?.name);
+          }
+        }
+      }
+      
+      // Fallback to TF-IDF + Levenshtein
+      if (!banglaBertUsed) {
+        mlPredictions = calculateDiseaseScores(inputTokens, allDiseases as DiseaseRow[]);
+      }
     }
 
     // Specialist prediction

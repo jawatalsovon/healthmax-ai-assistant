@@ -227,6 +227,7 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY") || "";
 
     // ── LAYER 1: Safety Guard ──
     for (const rule of EMERGENCY_PATTERNS) {
@@ -242,7 +243,20 @@ serve(async (req) => {
           follow_up_questions: null,
           ml_classifier_used: true,
         };
-        const sessionId = await logSession(supabase, symptoms, language, result, patient_info);
+        const notesSummary = await summarizeTriageNotes(
+          LOVABLE_API_KEY,
+          language,
+          symptoms,
+          conversation,
+          result,
+          patientContextFromInfo(patient_info)
+        );
+        const sessionId = await logSession(supabase, {
+          existingSessionId: session_id,
+          language,
+          result,
+          notesSummary,
+        });
         return new Response(JSON.stringify({ ...result, session_id: sessionId }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -262,7 +276,20 @@ serve(async (req) => {
           follow_up_questions: null,
           ml_classifier_used: true,
         };
-        const sessionId = await logSession(supabase, symptoms, language, result, patient_info);
+        const notesSummary = await summarizeTriageNotes(
+          LOVABLE_API_KEY,
+          language,
+          symptoms,
+          conversation,
+          result,
+          patientContextFromInfo(patient_info)
+        );
+        const sessionId = await logSession(supabase, {
+          existingSessionId: session_id,
+          language,
+          result,
+          notesSummary,
+        });
         return new Response(JSON.stringify({ ...result, session_id: sessionId }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -385,7 +412,6 @@ serve(async (req) => {
     const needsMoreInfo = conversationCount < 4;
 
     // ── LAYER 3: MULTI-AGENT PIPELINE ──
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
 
     try {
@@ -629,8 +655,22 @@ Language preference: ${language}`,
         }
       }
 
-      // Log session
-      const sessionId = await logSession(supabase, symptoms, language, mergedResult, patient_info);
+      // Log or update a single session record for the whole conversation
+      const notesSummary = await summarizeTriageNotes(
+        LOVABLE_API_KEY,
+        language,
+        symptoms,
+        conversation,
+        mergedResult,
+        patientContext
+      );
+
+      const sessionId = await logSession(supabase, {
+        existingSessionId: session_id,
+        language,
+        result: mergedResult,
+        notesSummary,
+      });
 
       return new Response(JSON.stringify({ ...mergedResult, session_id: sessionId }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -666,7 +706,21 @@ Language preference: ${language}`,
           ml_classifier_used: true,
           ai_fallback: true,
         };
-        const sessionId = await logSession(supabase, symptoms, language, fallbackResult, patient_info);
+        const notesSummary = await summarizeTriageNotes(
+          LOVABLE_API_KEY,
+          language,
+          symptoms,
+          conversation,
+          fallbackResult,
+          patientContextFromInfo(patient_info)
+        );
+
+        const sessionId = await logSession(supabase, {
+          existingSessionId: session_id,
+          language,
+          result: fallbackResult,
+          notesSummary,
+        });
         return new Response(JSON.stringify({ ...fallbackResult, session_id: sessionId }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -681,16 +735,128 @@ Language preference: ${language}`,
   }
 });
 
-async function logSession(supabase: any, symptoms: string, language: string, result: any, patient_info?: any) {
+function patientContextFromInfo(patient_info: any) {
+  if (!patient_info) return "No patient info provided.";
+  return `Name: ${patient_info.full_name || 'Unknown'}, Age: ${patient_info.age || 'Unknown'}, Gender: ${patient_info.gender || 'Unknown'}, Allergies: ${(patient_info.allergies || []).join(', ') || 'None'}, Chronic: ${(patient_info.chronic_conditions || []).join(', ') || 'None'}`;
+}
+
+async function summarizeTriageNotes(
+  apiKey: string,
+  language: string,
+  symptoms: string,
+  conversation: Array<{ role: string; content: string }>,
+  result: any,
+  patientContext: string
+): Promise<{ summary_text: string; key_notes: string[] }> {
+  const fallbackNotes = [
+    `Primary symptoms: ${symptoms}`,
+    result?.diseases?.[0]?.name ? `Top likely condition: ${result.diseases[0].name}` : undefined,
+    result?.urgency_level ? `Urgency: ${result.urgency_level}` : undefined,
+    result?.specialist ? `Suggested specialist: ${result.specialist}` : undefined,
+  ].filter(Boolean) as string[];
+
+  if (!apiKey) {
+    return {
+      summary_text: fallbackNotes.join('\n• '),
+      key_notes: fallbackNotes,
+    };
+  }
+
   try {
-    const { data } = await supabase.from("triage_sessions").insert({
-      symptoms_text: symptoms,
-      language,
-      urgency_level: result.urgency_level,
-      diseases_predicted: result.diseases || [],
-      medicines_suggested: result.medicines || [],
-      follow_up_questions: result.follow_up_questions || [],
-    }).select('id').single();
+    const recentConversation = (conversation || [])
+      .slice(-12)
+      .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
+      .join('\n');
+
+    const summary = await callAgent(
+      apiKey,
+      "google/gemini-2.5-flash-lite",
+      `You summarize a medical triage conversation into concise clinical key notes.
+Rules:
+- Return ONLY key medical points (max 6 bullets)
+- Include symptom progression, red flags, key yes/no clarifications, urgency, and likely diagnosis
+- Keep each bullet short and factual
+- Output using tool call`,
+      `Language: ${language}\nPatient: ${patientContext}\nLatest input: ${symptoms}\nConversation:\n${recentConversation}\nCurrent triage result: ${JSON.stringify(result)}`,
+      [{
+        type: "function",
+        function: {
+          name: "summarize_key_notes",
+          description: "Summarize triage into key clinical notes",
+          parameters: {
+            type: "object",
+            properties: {
+              key_notes: {
+                type: "array",
+                items: { type: "string" },
+              },
+            },
+            required: ["key_notes"],
+            additionalProperties: false,
+          },
+        },
+      }],
+      { type: "function", function: { name: "summarize_key_notes" } }
+    );
+
+    const keyNotes = Array.isArray(summary?.key_notes) && summary.key_notes.length > 0
+      ? summary.key_notes.slice(0, 6)
+      : fallbackNotes;
+
+    return {
+      summary_text: keyNotes.map((n: string) => `• ${n}`).join("\n"),
+      key_notes: keyNotes,
+    };
+  } catch (err) {
+    console.warn("Summary generation failed, using fallback notes", err);
+    return {
+      summary_text: fallbackNotes.map((n) => `• ${n}`).join("\n"),
+      key_notes: fallbackNotes,
+    };
+  }
+}
+
+async function logSession(
+  supabase: any,
+  params: {
+    existingSessionId?: string | null;
+    language: string;
+    result: any;
+    notesSummary: { summary_text: string; key_notes: string[] };
+  }
+) {
+  try {
+    const payload = {
+      symptoms_text: params.notesSummary.summary_text || "• Triage summary not available",
+      language: params.language,
+      urgency_level: params.result.urgency_level,
+      diseases_predicted: params.result.diseases || [],
+      medicines_suggested: params.result.medicines || [],
+      follow_up_questions: params.result.follow_up_questions || [],
+      conversation: {
+        key_notes: params.notesSummary.key_notes || [],
+        summarized_at: new Date().toISOString(),
+      },
+      updated_at: new Date().toISOString(),
+    };
+
+    if (params.existingSessionId) {
+      const { data: updated } = await supabase
+        .from("triage_sessions")
+        .update(payload)
+        .eq("id", params.existingSessionId)
+        .select("id")
+        .maybeSingle();
+
+      if (updated?.id) return updated.id;
+    }
+
+    const { data } = await supabase
+      .from("triage_sessions")
+      .insert(payload)
+      .select("id")
+      .single();
+
     return data?.id || null;
   } catch (err) {
     console.error("Failed to log session:", err);

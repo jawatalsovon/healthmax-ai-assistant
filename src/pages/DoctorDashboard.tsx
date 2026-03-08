@@ -45,14 +45,13 @@ export default function DoctorDashboard() {
       const { data } = await supabase
         .from('prescriptions')
         .select('*')
-        .in('status', ['pending_review', 'under_review'])
-        .or(`preferred_doctor_id.eq.${doctor.id},preferred_doctor_id.is.null,doctor_id.eq.${doctor.id}`)
+        .or(`and(status.eq.pending_review,preferred_doctor_id.eq.${doctor.id}),and(status.eq.pending_review,preferred_doctor_id.is.null),and(status.eq.pending_review,doctor_id.eq.${doctor.id}),and(status.eq.under_review,doctor_id.eq.${doctor.id})`)
         .order('created_at', { ascending: false })
         .limit(50);
       return data || [];
     },
-    enabled: !!doctor,
-    refetchInterval: 10000,
+    enabled: !!doctor?.is_verified,
+    refetchInterval: doctor?.is_verified ? 10000 : false,
   });
 
   // Real-time subscription for new prescriptions
@@ -73,11 +72,24 @@ export default function DoctorDashboard() {
   }, [doctor]);
 
   const handleTakeCase = async (rx: any) => {
-    await supabase.from('prescriptions').update({
-      doctor_id: doctor?.id,
-      status: 'under_review',
-    }).eq('id', rx.id);
-    setSelectedPrescription(rx);
+    if (!doctor) return;
+
+    const updateQuery = supabase
+      .from('prescriptions')
+      .update({
+        doctor_id: doctor.id,
+        status: 'under_review',
+      })
+      .eq('id', rx.id);
+
+    if (rx.doctor_id) {
+      updateQuery.eq('doctor_id', doctor.id);
+    } else {
+      updateQuery.is('doctor_id', null);
+    }
+
+    await updateQuery;
+    setSelectedPrescription({ ...rx, doctor_id: doctor.id, status: 'under_review' });
     setDoctorNotes('');
     queryClient.invalidateQueries({ queryKey: ['pending-prescriptions'] });
   };
@@ -134,6 +146,20 @@ export default function DoctorDashboard() {
         <AlertTriangle className="h-12 w-12 mx-auto text-yellow-500 mb-4" />
         <h1 className="text-xl font-bold font-bangla">{lang === 'bn' ? 'ডাক্তার রেজিস্ট্রেশন প্রয়োজন' : 'Doctor Registration Required'}</h1>
         <p className="text-muted-foreground font-bangla mt-2">{lang === 'bn' ? 'অনুগ্রহ করে প্রথমে ডাক্তার হিসেবে নিবন্ধন করুন।' : 'Please register as a doctor first.'}</p>
+      </div>
+    );
+  }
+
+  if (!doctor.is_verified) {
+    return (
+      <div className="container mx-auto px-4 py-12 text-center">
+        <Clock className="h-12 w-12 mx-auto text-primary mb-4" />
+        <h1 className="text-xl font-bold font-bangla">{lang === 'bn' ? 'অ্যাডমিন অনুমোদনের অপেক্ষায়' : 'Waiting for admin approval'}</h1>
+        <p className="text-muted-foreground font-bangla mt-2">
+          {lang === 'bn'
+            ? 'আপনার ডাক্তার আবেদন জমা হয়েছে। অনুমোদন হলে প্রেসক্রিপশন রিভিউ কিউ দেখতে পাবেন।'
+            : 'Your doctor registration is submitted. You will see prescription requests after approval.'}
+        </p>
       </div>
     );
   }

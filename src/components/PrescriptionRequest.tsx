@@ -84,6 +84,9 @@ export function PrescriptionRequest({ sessionId, triageResult, patientInfo, lang
 
       if (selectedDoctor !== 'any') {
         insertData.preferred_doctor_id = selectedDoctor;
+      } else if (doctors.length > 0) {
+        const randomDoctor = doctors[Math.floor(Math.random() * doctors.length)];
+        insertData.preferred_doctor_id = randomDoctor.id;
       }
 
       const { data, error } = await supabase

@@ -8,7 +8,7 @@ interface AuthContextType {
   role: 'healthcare_professional' | 'regular_user' | 'admin' | null;
   profile: { full_name: string | null; organization: string | null } | null;
   loading: boolean;
-  signUp: (email: string, password: string, fullName: string, role: 'healthcare_professional' | 'regular_user', organization?: string) => Promise<{ error: any }>;
+  signUp: (email: string, password: string, fullName: string, role: 'healthcare_professional' | 'regular_user' | 'admin', organization?: string) => Promise<{ error: any }>;
   signIn: (email: string, password: string) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
 }

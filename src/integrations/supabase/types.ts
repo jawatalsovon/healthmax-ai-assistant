@@ -14,7 +14,150 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      clinical_rules: {
+        Row: {
+          created_at: string
+          id: number
+          recommended_action: string
+          recommended_action_bn: string | null
+          symptom_pattern: string
+          symptom_pattern_bn: string | null
+          urgency_level: string
+        }
+        Insert: {
+          created_at?: string
+          id?: number
+          recommended_action: string
+          recommended_action_bn?: string | null
+          symptom_pattern: string
+          symptom_pattern_bn?: string | null
+          urgency_level: string
+        }
+        Update: {
+          created_at?: string
+          id?: number
+          recommended_action?: string
+          recommended_action_bn?: string | null
+          symptom_pattern?: string
+          symptom_pattern_bn?: string | null
+          urgency_level?: string
+        }
+        Relationships: []
+      }
+      medicines: {
+        Row: {
+          brand_name: string
+          created_at: string
+          form: string | null
+          generic_name: string | null
+          id: number
+          manufacturer: string | null
+          medicine_type: string | null
+          pack_info: string | null
+          price_info: string | null
+          slug: string | null
+          strength: string | null
+        }
+        Insert: {
+          brand_name: string
+          created_at?: string
+          form?: string | null
+          generic_name?: string | null
+          id?: number
+          manufacturer?: string | null
+          medicine_type?: string | null
+          pack_info?: string | null
+          price_info?: string | null
+          slug?: string | null
+          strength?: string | null
+        }
+        Update: {
+          brand_name?: string
+          created_at?: string
+          form?: string | null
+          generic_name?: string | null
+          id?: number
+          manufacturer?: string | null
+          medicine_type?: string | null
+          pack_info?: string | null
+          price_info?: string | null
+          slug?: string | null
+          strength?: string | null
+        }
+        Relationships: []
+      }
+      symptoms_diseases: {
+        Row: {
+          created_at: string
+          description: string | null
+          disease_name_bn: string | null
+          disease_name_en: string
+          emergency_flag: boolean | null
+          id: number
+          specialist_type: string | null
+          symptoms: string[]
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          disease_name_bn?: string | null
+          disease_name_en: string
+          emergency_flag?: boolean | null
+          id?: number
+          specialist_type?: string | null
+          symptoms?: string[]
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          disease_name_bn?: string | null
+          disease_name_en?: string
+          emergency_flag?: boolean | null
+          id?: number
+          specialist_type?: string | null
+          symptoms?: string[]
+        }
+        Relationships: []
+      }
+      triage_sessions: {
+        Row: {
+          conversation: Json | null
+          created_at: string
+          diseases_predicted: Json | null
+          follow_up_questions: Json | null
+          id: string
+          language: string | null
+          medicines_suggested: Json | null
+          symptoms_text: string
+          updated_at: string
+          urgency_level: string | null
+        }
+        Insert: {
+          conversation?: Json | null
+          created_at?: string
+          diseases_predicted?: Json | null
+          follow_up_questions?: Json | null
+          id?: string
+          language?: string | null
+          medicines_suggested?: Json | null
+          symptoms_text: string
+          updated_at?: string
+          urgency_level?: string | null
+        }
+        Update: {
+          conversation?: Json | null
+          created_at?: string
+          diseases_predicted?: Json | null
+          follow_up_questions?: Json | null
+          id?: string
+          language?: string | null
+          medicines_suggested?: Json | null
+          symptoms_text?: string
+          updated_at?: string
+          urgency_level?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

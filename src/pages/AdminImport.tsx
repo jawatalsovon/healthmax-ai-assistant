@@ -208,7 +208,7 @@ export default function AdminImport() {
 
     try {
       // Fetch the bundled CSV from the public data
-      const response = await fetch('/src/data/medicine.csv');
+      const response = await fetch('/data/medicine.csv');
       if (!response.ok) throw new Error('Could not load bundled medicine CSV');
       const text = await response.text();
       const lines = text.split('\n').filter(l => l.trim());

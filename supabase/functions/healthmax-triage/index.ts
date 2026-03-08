@@ -288,6 +288,8 @@ ${diseaseKnowledgeBase}
 CLINICAL RULES:
 ${clinicalRulesContext}
 ${mlContext}
+${specialistContext}
+${medicineNerContext}
 ${patientContext}
 
 CONVERSATION RULES:

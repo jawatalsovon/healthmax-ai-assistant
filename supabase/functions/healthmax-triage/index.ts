@@ -130,6 +130,44 @@ function levenshteinSimilarity(a: string, b: string): number {
   return (longer.length - costs[shorter.length]) / longer.length;
 }
 
+// ─── AGENT HELPERS ───
+async function callAgent(apiKey: string, model: string, systemPrompt: string, userContent: string, tools?: any[], toolChoice?: any): Promise<any> {
+  const body: any = {
+    model,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userContent },
+    ],
+  };
+  if (tools) {
+    body.tools = tools;
+    body.tool_choice = toolChoice || "auto";
+  }
+
+  const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    console.error(`Agent error (${model}):`, response.status, errText);
+    throw { status: response.status, message: errText };
+  }
+
+  const data = await response.json();
+  const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
+  if (toolCall) {
+    return JSON.parse(toolCall.function.arguments);
+  }
+  // Fallback: return text content
+  return { text: data.choices?.[0]?.message?.content || "" };
+}
+
 // ─── MAIN HANDLER ───
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -187,7 +225,7 @@ serve(async (req) => {
       }
     }
 
-    // ── LAYER 2: ML Classifier ──
+    // ── LAYER 2: ML Classifier + Data Fetch ──
     const [
       { data: allDiseases },
       { data: clinicalRules },
@@ -208,7 +246,7 @@ serve(async (req) => {
       mlPredictions = calculateDiseaseScores(inputTokens, allDiseases as DiseaseRow[]);
     }
 
-    // ── LAYER 2b: Specialist prediction from classification dataset ──
+    // Specialist prediction
     let specialistPrediction = '';
     if (specialistData && specialistData.length > 0) {
       const inputLower = symptoms.toLowerCase();
@@ -228,171 +266,307 @@ serve(async (req) => {
       if (bestMatch.score > 0.3) specialistPrediction = bestMatch.specialist;
     }
 
-    // ── LAYER 2c: Medicine NER context ──
+    // Medicine NER context
     let medicineNerContext = '';
     if (medicineNerData && medicineNerData.length > 0) {
-      // Find NER entries matching mentioned diseases/symptoms
       const inputLower = symptoms.toLowerCase();
       const relevantNer = medicineNerData.filter((ner: any) => {
         if (!ner.disease) return false;
         const diseases = ner.disease.toLowerCase().split(',').map((d: string) => d.trim());
         return diseases.some((d: string) => d.length > 2 && inputLower.includes(d));
       }).slice(0, 10);
-      
       if (relevantNer.length > 0) {
-        medicineNerContext = '\nMEDICINE-DISEASE KNOWLEDGE (from NER dataset):\n' + 
-          relevantNer.map((n: any) => `- Medicine: ${n.medicine_name || 'N/A'} | Disease: ${n.disease} | Class: ${n.pharmacological_class || 'N/A'} | Organ: ${n.organ || 'N/A'}`).join('\n');
+        medicineNerContext = relevantNer.map((n: any) => `- Medicine: ${n.medicine_name || 'N/A'} | Disease: ${n.disease} | Class: ${n.pharmacological_class || 'N/A'} | Organ: ${n.organ || 'N/A'}`).join('\n');
       }
     }
 
-    // Build disease knowledge base for anti-hallucination
-    const diseaseKnowledgeBase = allDiseases ? allDiseases.map((d: any) => 
-      `Disease: ${d.disease_name_en} (${d.disease_name_bn || 'N/A'}) | Symptoms: ${d.symptoms.join(', ')} | Specialist: ${d.specialist_type || 'GP'} | Emergency: ${d.emergency_flag ? 'Yes' : 'No'} | Desc: ${d.description || 'N/A'}`
+    // Build knowledge bases
+    const diseaseKnowledgeBase = allDiseases ? allDiseases.map((d: any) =>
+      `${d.disease_name_en} (${d.disease_name_bn || 'N/A'}) | Symptoms: ${d.symptoms.join(', ')} | Specialist: ${d.specialist_type || 'GP'} | Emergency: ${d.emergency_flag ? 'Yes' : 'No'}`
     ).join('\n') : '';
 
     const clinicalRulesContext = clinicalRules ? clinicalRules.map((r: any) =>
-      `Rule: ${r.symptom_pattern} → Urgency: ${r.urgency_level} | Action: ${r.recommended_action}`
+      `${r.symptom_pattern} → ${r.urgency_level} | ${r.recommended_action}`
     ).join('\n') : '';
 
-    // ── LAYER 3: LLM Clinical Reasoning ──
+    const mlContext = mlPredictions.length > 0
+      ? mlPredictions.map(p => `- ${p.name} (${p.name_bn}): ${p.confidence}% | Specialist: ${p.specialist}`).join('\n')
+      : 'No strong ML matches found.';
+
+    const patientContext = patient_info
+      ? `Name: ${patient_info.full_name || 'Unknown'}, Age: ${patient_info.age || 'Unknown'}, Gender: ${patient_info.gender || 'Unknown'}, Allergies: ${(patient_info.allergies || []).join(', ') || 'None'}, Chronic: ${(patient_info.chronic_conditions || []).join(', ') || 'None'}`
+      : 'No patient info provided.';
+
+    const conversationCount = conversation.length;
+    const needsMoreInfo = conversationCount < 4;
+
+    // ── LAYER 3: MULTI-AGENT PIPELINE ──
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
 
-    const mlContext = mlPredictions.length > 0
-      ? `\nML CLASSIFIER OUTPUT:\n${mlPredictions.map(p => `- ${p.name} (${p.name_bn}): ${p.confidence}% confidence, Specialist: ${p.specialist}`).join('\n')}`
-      : '';
+    try {
+      // ══════════════════════════════════════════════
+      // AGENT 1: Symptom Analyst
+      // ══════════════════════════════════════════════
+      console.log("[Agent 1] Symptom Analyst starting...");
+      const agent1Result = await callAgent(
+        LOVABLE_API_KEY,
+        "google/gemini-2.5-flash",
+        `You are a medical Symptom Analyst AI specializing in Bangladesh healthcare. Your ONLY job is to extract and structure symptoms from patient input.
 
-    const specialistContext = specialistPrediction
-      ? `\nSPECIALIST PREDICTION (from classification dataset): ${specialistPrediction}`
-      : '';
+RULES:
+- Extract every symptom mentioned (explicit and implied)
+- Normalize symptom names to standard medical terms
+- Identify duration, severity, and body location if mentioned
+- Detect if the patient is describing symptoms in Bengali or English
+- Output structured JSON via the tool call
+- Do NOT diagnose. Do NOT suggest treatment. Only extract symptoms.`,
+        `Patient says: "${symptoms}"
+Language: ${language}
+Previous conversation: ${JSON.stringify(conversation)}
+Patient info: ${patientContext}`,
+        [{
+          type: "function",
+          function: {
+            name: "extract_symptoms",
+            description: "Extract structured symptoms from patient input",
+            parameters: {
+              type: "object",
+              properties: {
+                symptoms_extracted: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      symptom_en: { type: "string", description: "Standard medical term in English" },
+                      symptom_bn: { type: "string", description: "Bengali translation" },
+                      severity: { type: "string", enum: ["mild", "moderate", "severe", "unknown"] },
+                      duration: { type: "string", description: "How long, e.g. '3 days', 'unknown'" },
+                      body_location: { type: "string", description: "Body part affected" },
+                    },
+                    required: ["symptom_en", "symptom_bn", "severity"],
+                  },
+                },
+                patient_distress_level: { type: "string", enum: ["calm", "worried", "distressed", "panicked"] },
+                additional_context: { type: "string", description: "Any relevant context inferred from input" },
+              },
+              required: ["symptoms_extracted", "patient_distress_level"],
+              additionalProperties: false,
+            },
+          },
+        }],
+        { type: "function", function: { name: "extract_symptoms" } }
+      );
+      console.log("[Agent 1] Result:", JSON.stringify(agent1Result).slice(0, 300));
 
-    const patientContext = patient_info 
-      ? `\nPATIENT INFO: Name: ${patient_info.full_name || 'Unknown'}, Age: ${patient_info.age || 'Unknown'}, Gender: ${patient_info.gender || 'Unknown'}, Allergies: ${(patient_info.allergies || []).join(', ') || 'None'}, Chronic conditions: ${(patient_info.chronic_conditions || []).join(', ') || 'None'}`
-      : '';
-
-    const conversationCount = conversation.length;
-    const needsMoreInfo = conversationCount < 4; // Ask follow-ups in early rounds
-
-    const systemPrompt = `You are HealthMax, a clinical triage AI for Bangladesh. You assist Community Health Workers (CHWs).
+      // ══════════════════════════════════════════════
+      // AGENT 2: Diagnostic Classifier
+      // ══════════════════════════════════════════════
+      console.log("[Agent 2] Diagnostic Classifier starting...");
+      const agent2Result = await callAgent(
+        LOVABLE_API_KEY,
+        "google/gemini-2.5-flash",
+        `You are a medical Diagnostic Classifier AI for Bangladesh. You receive structured symptoms and must match them against a disease database.
 
 CRITICAL ANTI-HALLUCINATION RULES:
-1. You may ONLY suggest diseases that exist in the DISEASE DATABASE below. Do NOT invent diseases.
-2. You may ONLY recommend medicines found in the Supabase medicines table. If unsure, suggest "consult doctor for prescription".
-3. All confidence percentages must be based on symptom overlap with the database.
-4. If symptoms don't clearly match any disease, say "Insufficient information" and ask more questions.
-5. NEVER fabricate statistics, drug interactions, or treatment protocols not grounded in the database.
+1. You may ONLY suggest diseases from the DISEASE DATABASE below. Do NOT invent diseases.
+2. Confidence must reflect symptom overlap with database entries.
+3. If symptoms don't match well, say "Insufficient data" with low confidence.
+4. Consider patient age, gender, and chronic conditions in your assessment.
 
-DISEASE DATABASE (ONLY use diseases from this list):
+DISEASE DATABASE:
 ${diseaseKnowledgeBase}
 
 CLINICAL RULES:
 ${clinicalRulesContext}
+
+ML CLASSIFIER PREDICTIONS:
 ${mlContext}
-${specialistContext}
-${medicineNerContext}
-${patientContext}
 
-CONVERSATION RULES:
-- Conversation round: ${conversationCount + 1}
-- ${needsMoreInfo ? 'Ask 2-3 focused follow-up questions in a SINGLE response to gather more info efficiently. Questions should be specific and clinically relevant (not just yes/no). Example: "1) How long have you had the fever? 2) Do you have any rash? 3) Have you traveled recently?"' : 'You have enough context. Provide your final assessment with diseases, urgency, and recommendations.'}
-- Make questions varied and informative, not repetitive yes/no.
-- If the patient says they want a prescription, set can_generate_prescription to true.
-
-Previous conversation: ${JSON.stringify(conversation)}
-
-MUST use the triage_result tool.`;
-
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: `Patient symptoms: "${symptoms}"\nLanguage: ${language}` },
-        ],
-        tools: [
-          {
-            type: "function",
-            function: {
-              name: "triage_result",
-              description: "Return structured triage result",
-              parameters: {
-                type: "object",
-                properties: {
-                  urgency_level: { type: "string", enum: ["emergency", "urgent", "moderate", "self_care"] },
-                  diseases: {
-                    type: "array",
-                    items: {
-                      type: "object",
-                      properties: {
-                        name: { type: "string" },
-                        name_bn: { type: "string" },
-                        confidence: { type: "number" },
-                      },
-                      required: ["name", "name_bn", "confidence"],
+SPECIALIST DATASET PREDICTION: ${specialistPrediction || 'None'}`,
+        `Structured symptoms from Agent 1: ${JSON.stringify(agent1Result)}
+Patient info: ${patientContext}
+Conversation round: ${conversationCount + 1}`,
+        [{
+          type: "function",
+          function: {
+            name: "diagnose",
+            description: "Provide diagnostic classification based on symptoms",
+            parameters: {
+              type: "object",
+              properties: {
+                urgency_level: { type: "string", enum: ["emergency", "urgent", "moderate", "self_care"] },
+                diseases: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      name: { type: "string" },
+                      name_bn: { type: "string" },
+                      confidence: { type: "number", description: "0-100 percentage" },
                     },
-                  },
-                  explanation: { type: "string" },
-                  explanation_bn: { type: "string" },
-                  follow_up_questions: {
-                    type: "array",
-                    description: "2-3 focused follow-up questions to narrow diagnosis. Use varied question types, not just yes/no.",
-                    items: {
-                      type: "object",
-                      properties: {
-                        question_en: { type: "string" },
-                        question_bn: { type: "string" },
-                        type: { type: "string", enum: ["yes_no", "choice", "open"] },
-                        options_en: { type: "array", items: { type: "string" } },
-                        options_bn: { type: "array", items: { type: "string" } },
-                      },
-                      required: ["question_en", "question_bn", "type"],
-                    },
-                  },
-                  recommended_facility: { type: "string" },
-                  recommended_facility_bn: { type: "string" },
-                  specialist: { type: "string" },
-                  can_generate_prescription: { type: "boolean", description: "True if enough info to generate a prescription" },
-                  medicines: {
-                    type: "array",
-                    items: {
-                      type: "object",
-                      properties: {
-                        name: { type: "string" },
-                        generic: { type: "string" },
-                        price: { type: "string" },
-                      },
-                      required: ["name", "generic", "price"],
-                    },
+                    required: ["name", "name_bn", "confidence"],
                   },
                 },
-                required: ["urgency_level", "diseases", "explanation", "explanation_bn"],
+                specialist: { type: "string" },
+                recommended_facility: { type: "string" },
+                recommended_facility_bn: { type: "string" },
+                needs_more_info: { type: "boolean", description: "True if more symptoms needed for confident diagnosis" },
+                diagnostic_reasoning: { type: "string", description: "Brief internal reasoning about the diagnosis" },
               },
+              required: ["urgency_level", "diseases", "specialist", "needs_more_info"],
+              additionalProperties: false,
             },
           },
-        ],
-        tool_choice: { type: "function", function: { name: "triage_result" } },
-      }),
-    });
+        }],
+        { type: "function", function: { name: "diagnose" } }
+      );
+      console.log("[Agent 2] Result:", JSON.stringify(agent2Result).slice(0, 300));
 
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error("AI Gateway error:", response.status, errText);
-      if (response.status === 429) {
+      // ══════════════════════════════════════════════
+      // AGENT 3: Treatment Advisor
+      // ══════════════════════════════════════════════
+      console.log("[Agent 3] Treatment Advisor starting...");
+      const agent3Result = await callAgent(
+        LOVABLE_API_KEY,
+        "google/gemini-3-flash-preview",
+        `You are a Treatment Advisor AI for Bangladesh healthcare. You receive a diagnosis and must provide treatment advice, medicine recommendations, follow-up questions, and a patient-friendly explanation.
+
+RULES:
+1. Only recommend medicines from the MEDICINE DATABASE below. If unsure, say "consult doctor for prescription".
+2. Provide explanation in BOTH English and Bengali.
+3. Be empathetic and clear for Community Health Workers (CHWs).
+4. ${needsMoreInfo ? 'The diagnosis agent says more info is needed. Generate 2-3 focused follow-up questions (varied types, not just yes/no).' : 'Provide final treatment advice.'}
+5. If the patient mentioned wanting a prescription, set can_generate_prescription to true.
+6. Consider patient allergies and chronic conditions when recommending medicines.
+
+MEDICINE-DISEASE KNOWLEDGE:
+${medicineNerContext || 'No specific medicine-disease matches found.'}
+
+DIAGNOSIS FROM AGENT 2:
+${JSON.stringify(agent2Result)}
+
+PATIENT INFO: ${patientContext}
+CONVERSATION ROUND: ${conversationCount + 1}
+PREVIOUS CONVERSATION: ${JSON.stringify(conversation)}`,
+        `Original patient input: "${symptoms}"
+Language preference: ${language}`,
+        [{
+          type: "function",
+          function: {
+            name: "treatment_plan",
+            description: "Provide complete treatment advice and patient-facing output",
+            parameters: {
+              type: "object",
+              properties: {
+                explanation: { type: "string", description: "Patient-friendly explanation in English" },
+                explanation_bn: { type: "string", description: "Patient-friendly explanation in Bengali" },
+                follow_up_questions: {
+                  type: "array",
+                  description: "2-3 focused follow-up questions if more info needed",
+                  items: {
+                    type: "object",
+                    properties: {
+                      question_en: { type: "string" },
+                      question_bn: { type: "string" },
+                      type: { type: "string", enum: ["yes_no", "choice", "open"] },
+                      options_en: { type: "array", items: { type: "string" } },
+                      options_bn: { type: "array", items: { type: "string" } },
+                    },
+                    required: ["question_en", "question_bn", "type"],
+                  },
+                },
+                medicines: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      name: { type: "string" },
+                      generic: { type: "string" },
+                      price: { type: "string" },
+                    },
+                    required: ["name", "generic", "price"],
+                  },
+                },
+                can_generate_prescription: { type: "boolean" },
+                home_care_advice_en: { type: "string", description: "Self-care tips in English" },
+                home_care_advice_bn: { type: "string", description: "Self-care tips in Bengali" },
+              },
+              required: ["explanation", "explanation_bn"],
+              additionalProperties: false,
+            },
+          },
+        }],
+        { type: "function", function: { name: "treatment_plan" } }
+      );
+      console.log("[Agent 3] Result:", JSON.stringify(agent3Result).slice(0, 300));
+
+      // ── MERGE AGENT OUTPUTS ──
+      const mergedResult = {
+        urgency_level: agent2Result.urgency_level || "moderate",
+        diseases: agent2Result.diseases || [],
+        explanation: agent3Result.explanation || "",
+        explanation_bn: agent3Result.explanation_bn || "",
+        follow_up_questions: agent3Result.follow_up_questions || null,
+        recommended_facility: agent2Result.recommended_facility || "",
+        recommended_facility_bn: agent2Result.recommended_facility_bn || "",
+        specialist: agent2Result.specialist || specialistPrediction || "General Practitioner",
+        medicines: agent3Result.medicines || [],
+        can_generate_prescription: agent3Result.can_generate_prescription || false,
+        ml_classifier_used: true,
+        ai_fallback: false,
+        // Extra agentic metadata
+        _agent_meta: {
+          symptoms_extracted: agent1Result.symptoms_extracted?.length || 0,
+          distress_level: agent1Result.patient_distress_level,
+          diagnostic_reasoning: agent2Result.diagnostic_reasoning,
+          home_care_en: agent3Result.home_care_advice_en,
+          home_care_bn: agent3Result.home_care_advice_bn,
+        },
+      };
+
+      // ── LAYER 4: Enrich medicines from DB ──
+      if (mergedResult.medicines && mergedResult.medicines.length > 0) {
+        for (const med of mergedResult.medicines) {
+          const { data: dbMeds } = await supabase
+            .from("medicines")
+            .select("brand_name, generic_name, price_info, manufacturer")
+            .ilike("generic_name", `%${med.generic}%`)
+            .limit(3);
+          if (dbMeds && dbMeds.length > 0) {
+            med.name = dbMeds[0].brand_name;
+            med.price = dbMeds[0].price_info || med.price;
+            med.alternatives = dbMeds.slice(1).map((m: any) => ({
+              brand: m.brand_name,
+              manufacturer: m.manufacturer,
+              price: m.price_info,
+            }));
+          }
+        }
+      }
+
+      // Log session
+      const sessionId = await logSession(supabase, symptoms, language, mergedResult, patient_info);
+
+      return new Response(JSON.stringify({ ...mergedResult, session_id: sessionId }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+
+    } catch (agentErr: any) {
+      console.error("Agent pipeline error:", agentErr);
+
+      // Handle rate limit / payment errors
+      if (agentErr.status === 429) {
         return new Response(JSON.stringify({ error: "Rate limit exceeded. Please try again shortly." }), {
           status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      if (response.status === 402) {
+      if (agentErr.status === 402) {
         return new Response(JSON.stringify({ error: "AI credits exhausted." }), {
           status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      
+
       // ML-only fallback
       if (mlPredictions.length > 0) {
         const fallbackResult = {
@@ -413,42 +587,8 @@ MUST use the triage_result tool.`;
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      throw new Error(`AI error: ${response.status}`);
+      throw agentErr;
     }
-
-    const aiData = await response.json();
-    const toolCall = aiData.choices?.[0]?.message?.tool_calls?.[0];
-    if (!toolCall) throw new Error("No tool call in AI response");
-
-    const result = JSON.parse(toolCall.function.arguments);
-    result.ml_classifier_used = true;
-
-    // ── LAYER 4: Enrich medicines from DB ──
-    if (result.medicines && result.medicines.length > 0) {
-      for (const med of result.medicines) {
-        const { data: dbMeds } = await supabase
-          .from("medicines")
-          .select("brand_name, generic_name, price_info, manufacturer")
-          .ilike("generic_name", `%${med.generic}%`)
-          .limit(3);
-        if (dbMeds && dbMeds.length > 0) {
-          med.name = dbMeds[0].brand_name;
-          med.price = dbMeds[0].price_info || med.price;
-          med.alternatives = dbMeds.slice(1).map((m: any) => ({
-            brand: m.brand_name,
-            manufacturer: m.manufacturer,
-            price: m.price_info,
-          }));
-        }
-      }
-    }
-
-    // Log session
-    const sessionId = await logSession(supabase, symptoms, language, result, patient_info);
-
-    return new Response(JSON.stringify({ ...result, session_id: sessionId }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
   } catch (e) {
     console.error("Triage error:", e);
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), {

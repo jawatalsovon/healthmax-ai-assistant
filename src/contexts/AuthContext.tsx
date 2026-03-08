@@ -5,7 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 interface AuthContextType {
   user: User | null;
   session: Session | null;
-  role: 'healthcare_professional' | 'regular_user' | null;
+  role: 'healthcare_professional' | 'regular_user' | 'admin' | null;
   profile: { full_name: string | null; organization: string | null } | null;
   loading: boolean;
   signUp: (email: string, password: string, fullName: string, role: 'healthcare_professional' | 'regular_user', organization?: string) => Promise<{ error: any }>;

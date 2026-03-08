@@ -42,6 +42,8 @@ const App = () => (
               <Route path="/login" element={<Login />} />
               <Route path="/signup" element={<Signup />} />
               <Route path="/admin/import" element={<AdminImport />} />
+              <Route path="/admin" element={<AdminLogin />} />
+              <Route path="/admin/panel" element={<AdminPanel />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>

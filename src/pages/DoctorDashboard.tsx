@@ -56,6 +56,24 @@ export default function DoctorDashboard() {
     refetchInterval: doctor?.is_verified ? 10000 : false,
   });
 
+  const { data: handledCases = [] } = useQuery({
+    queryKey: ['doctor-handled-cases', doctor?.id],
+    queryFn: async () => {
+      if (!doctor?.id) return [];
+      const { data, error } = await supabase
+        .from('prescriptions')
+        .select('*')
+        .eq('doctor_id', doctor.id)
+        .in('status', ['signed', 'rejected'])
+        .order('updated_at', { ascending: false })
+        .limit(20);
+
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!doctor?.is_verified,
+  });
+
   // Real-time subscription for new prescriptions
   useEffect(() => {
     if (!doctor) return;

@@ -71,7 +71,7 @@ export default function UserDashboard() {
       if (!user) return [];
       const { data } = await supabase
         .from('prescriptions')
-        .select('*, registered_doctors:doctor_id(full_name, specialization)')
+        .select('*, registered_doctors:registered_doctors!prescriptions_doctor_id_fkey(full_name, specialization)')
         .order('created_at', { ascending: false })
         .limit(10);
       return data || [];

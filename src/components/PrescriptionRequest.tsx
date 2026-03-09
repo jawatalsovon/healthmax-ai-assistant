@@ -58,8 +58,42 @@ export function PrescriptionRequest({ sessionId, triageResult, patientInfo, lang
   }, [prescriptionId]);
 
   const requestPrescription = async () => {
+    if (!user) {
+      toast({
+        title: lang === 'bn' ? 'লগইন প্রয়োজন' : 'Login required',
+        description: lang === 'bn' ? 'প্রেসক্রিপশন চাইতে আগে লগইন করুন।' : 'Please log in before requesting a prescription.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setStatus('requesting');
     try {
+      let patientProfileId: string | null = null;
+      const { data: existingProfile } = await supabase
+        .from('patient_profiles')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (existingProfile?.id) {
+        patientProfileId = existingProfile.id;
+      } else {
+        const { data: createdProfile, error: profileError } = await supabase
+          .from('patient_profiles')
+          .insert({
+            user_id: user.id,
+            full_name: patientInfo?.name || null,
+            age: patientInfo?.age || null,
+            gender: patientInfo?.gender || null,
+          })
+          .select('id')
+          .single();
+
+        if (profileError) throw profileError;
+        patientProfileId = createdProfile.id;
+      }
+
       // Build AI-generated prescription from triage result
       const aiPrescription = {
         patient: patientInfo || {},
@@ -73,6 +107,7 @@ export function PrescriptionRequest({ sessionId, triageResult, patientInfo, lang
 
       const insertData: any = {
         triage_session_id: sessionId,
+        patient_profile_id: patientProfileId,
         ai_generated_prescription: aiPrescription,
         urgency_level: triageResult.urgency_level,
         diseases: triageResult.diseases,
@@ -81,21 +116,6 @@ export function PrescriptionRequest({ sessionId, triageResult, patientInfo, lang
         triage_summary: triageResult,
         status: 'pending_review',
       };
-
-      if (selectedDoctor !== 'any') {
-        insertData.preferred_doctor_id = selectedDoctor;
-      } else if (doctors.length > 0) {
-        const randomDoctor = doctors[Math.floor(Math.random() * doctors.length)];
-        insertData.preferred_doctor_id = randomDoctor.id;
-      }
-
-      const { data, error } = await supabase
-        .from('prescriptions')
-        .insert(insertData)
-        .select('id')
-        .single();
-
-      if (error) throw error;
       setPrescriptionId(data.id);
       setStatus('pending');
       toast({

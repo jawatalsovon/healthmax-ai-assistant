@@ -318,6 +318,40 @@ export default function DoctorDashboard() {
           )}
         </div>
       </div>
+
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle className="text-lg font-bangla">
+            {lang === 'bn' ? 'চিকিৎসা করা রোগীর তালিকা' : 'Patients You Treated'}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {handledCases.length > 0 ? (
+            <div className="space-y-3">
+              {handledCases.map((rx: any) => {
+                const patientName = rx.triage_summary?.patient?.name || rx.ai_generated_prescription?.patient?.name || 'Unknown Patient';
+                const likelyDisease = Array.isArray(rx.diseases) && rx.diseases.length > 0 ? rx.diseases[0]?.name : null;
+
+                return (
+                  <div key={rx.id} className="border rounded-lg p-3">
+                    <div className="flex items-center justify-between">
+                      <p className="font-medium font-bangla">{patientName}</p>
+                      <Badge variant={rx.status === 'signed' ? 'default' : 'secondary'}>{rx.status}</Badge>
+                    </div>
+                    {rx.patient_symptoms && <p className="text-sm text-muted-foreground font-bangla mt-1 line-clamp-2">{rx.patient_symptoms}</p>}
+                    <div className="flex flex-wrap gap-2 mt-2 text-xs text-muted-foreground">
+                      {likelyDisease && <span>{lang === 'bn' ? 'সম্ভাব্য রোগ:' : 'Likely disease:'} {likelyDisease}</span>}
+                      <span>{new Date(rx.updated_at).toLocaleString(lang === 'bn' ? 'bn-BD' : 'en-US')}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground font-bangla">{lang === 'bn' ? 'এখনও কোনো সম্পন্ন কেস নেই' : 'No completed cases yet'}</p>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

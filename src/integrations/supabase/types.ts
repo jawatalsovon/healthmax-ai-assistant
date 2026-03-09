@@ -509,6 +509,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      can_access_prescription: {
+        Args: { _rx_id: string; _user_id: string }
+        Returns: boolean
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]

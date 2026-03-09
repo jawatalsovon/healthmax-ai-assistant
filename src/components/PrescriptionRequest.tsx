@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useLanguage } from '@/contexts/LanguageContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -7,8 +6,8 @@ import { Badge } from '@/components/ui/badge';
 import { FileText, Loader2, CheckCircle, Clock, UserCheck } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/contexts/AuthContext';
 import { TriageResult, PatientInfo } from '@/types/triage';
-
 interface Props {
   sessionId: string;
   triageResult: TriageResult;
@@ -18,6 +17,7 @@ interface Props {
 
 export function PrescriptionRequest({ sessionId, triageResult, patientInfo, lang }: Props) {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [status, setStatus] = useState<'idle' | 'requesting' | 'pending' | 'signed' | 'error'>('idle');
   const [prescriptionId, setPrescriptionId] = useState<string | null>(null);
   const [prescription, setPrescription] = useState<any>(null);
@@ -58,8 +58,42 @@ export function PrescriptionRequest({ sessionId, triageResult, patientInfo, lang
   }, [prescriptionId]);
 
   const requestPrescription = async () => {
+    if (!user) {
+      toast({
+        title: lang === 'bn' ? 'লগইন প্রয়োজন' : 'Login required',
+        description: lang === 'bn' ? 'প্রেসক্রিপশন চাইতে আগে লগইন করুন।' : 'Please log in before requesting a prescription.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setStatus('requesting');
     try {
+      let patientProfileId: string | null = null;
+      const { data: existingProfile } = await supabase
+        .from('patient_profiles')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (existingProfile?.id) {
+        patientProfileId = existingProfile.id;
+      } else {
+        const { data: createdProfile, error: profileError } = await supabase
+          .from('patient_profiles')
+          .insert({
+            user_id: user.id,
+            full_name: patientInfo?.full_name || null,
+            age: patientInfo?.age || null,
+            gender: patientInfo?.gender || null,
+          })
+          .select('id')
+          .single();
+
+        if (profileError) throw profileError;
+        patientProfileId = createdProfile.id;
+      }
+
       // Build AI-generated prescription from triage result
       const aiPrescription = {
         patient: patientInfo || {},
@@ -73,6 +107,7 @@ export function PrescriptionRequest({ sessionId, triageResult, patientInfo, lang
 
       const insertData: any = {
         triage_session_id: sessionId,
+        patient_profile_id: patientProfileId,
         ai_generated_prescription: aiPrescription,
         urgency_level: triageResult.urgency_level,
         diseases: triageResult.diseases,

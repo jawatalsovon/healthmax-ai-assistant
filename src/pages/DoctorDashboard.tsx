@@ -11,10 +11,12 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, FileText, CheckCircle, Edit, RefreshCw, Stethoscope, Clock, AlertTriangle } from 'lucide-react';
 import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 export default function DoctorDashboard() {
   const { lang } = useLanguage();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [selectedPrescription, setSelectedPrescription] = useState<any>(null);
@@ -52,6 +54,24 @@ export default function DoctorDashboard() {
     },
     enabled: !!doctor?.is_verified,
     refetchInterval: doctor?.is_verified ? 10000 : false,
+  });
+
+  const { data: handledCases = [] } = useQuery({
+    queryKey: ['doctor-handled-cases', doctor?.id],
+    queryFn: async () => {
+      if (!doctor?.id) return [];
+      const { data, error } = await supabase
+        .from('prescriptions')
+        .select('*')
+        .eq('doctor_id', doctor.id)
+        .in('status', ['signed', 'rejected'])
+        .order('updated_at', { ascending: false })
+        .limit(20);
+
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!doctor?.is_verified,
   });
 
   // Real-time subscription for new prescriptions
@@ -146,6 +166,9 @@ export default function DoctorDashboard() {
         <AlertTriangle className="h-12 w-12 mx-auto text-yellow-500 mb-4" />
         <h1 className="text-xl font-bold font-bangla">{lang === 'bn' ? 'ডাক্তার রেজিস্ট্রেশন প্রয়োজন' : 'Doctor Registration Required'}</h1>
         <p className="text-muted-foreground font-bangla mt-2">{lang === 'bn' ? 'অনুগ্রহ করে প্রথমে ডাক্তার হিসেবে নিবন্ধন করুন।' : 'Please register as a doctor first.'}</p>
+        <Button className="mt-4 font-bangla" onClick={() => navigate('/doctor/register')}>
+          {lang === 'bn' ? 'ডাক্তার রেজিস্ট্রেশন ফর্ম খুলুন' : 'Open doctor registration form'}
+        </Button>
       </div>
     );
   }
@@ -295,6 +318,40 @@ export default function DoctorDashboard() {
           )}
         </div>
       </div>
+
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle className="text-lg font-bangla">
+            {lang === 'bn' ? 'চিকিৎসা করা রোগীর তালিকা' : 'Patients You Treated'}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {handledCases.length > 0 ? (
+            <div className="space-y-3">
+              {handledCases.map((rx: any) => {
+                const patientName = rx.triage_summary?.patient?.name || rx.ai_generated_prescription?.patient?.name || 'Unknown Patient';
+                const likelyDisease = Array.isArray(rx.diseases) && rx.diseases.length > 0 ? rx.diseases[0]?.name : null;
+
+                return (
+                  <div key={rx.id} className="border rounded-lg p-3">
+                    <div className="flex items-center justify-between">
+                      <p className="font-medium font-bangla">{patientName}</p>
+                      <Badge variant={rx.status === 'signed' ? 'default' : 'secondary'}>{rx.status}</Badge>
+                    </div>
+                    {rx.patient_symptoms && <p className="text-sm text-muted-foreground font-bangla mt-1 line-clamp-2">{rx.patient_symptoms}</p>}
+                    <div className="flex flex-wrap gap-2 mt-2 text-xs text-muted-foreground">
+                      {likelyDisease && <span>{lang === 'bn' ? 'সম্ভাব্য রোগ:' : 'Likely disease:'} {likelyDisease}</span>}
+                      <span>{new Date(rx.updated_at).toLocaleString(lang === 'bn' ? 'bn-BD' : 'en-US')}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground font-bangla">{lang === 'bn' ? 'এখনও কোনো সম্পন্ন কেস নেই' : 'No completed cases yet'}</p>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

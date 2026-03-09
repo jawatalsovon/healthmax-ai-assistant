@@ -11,6 +11,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, FileText, CheckCircle, Edit, RefreshCw, Stethoscope, Clock, AlertTriangle } from 'lucide-react';
 import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 export default function DoctorDashboard() {
   const { lang } = useLanguage();

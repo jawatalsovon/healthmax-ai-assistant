@@ -16,6 +16,7 @@ import { useNavigate } from 'react-router-dom';
 export default function DoctorDashboard() {
   const { lang } = useLanguage();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [selectedPrescription, setSelectedPrescription] = useState<any>(null);

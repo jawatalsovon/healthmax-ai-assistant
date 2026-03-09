@@ -166,6 +166,9 @@ export default function DoctorDashboard() {
         <AlertTriangle className="h-12 w-12 mx-auto text-yellow-500 mb-4" />
         <h1 className="text-xl font-bold font-bangla">{lang === 'bn' ? 'ডাক্তার রেজিস্ট্রেশন প্রয়োজন' : 'Doctor Registration Required'}</h1>
         <p className="text-muted-foreground font-bangla mt-2">{lang === 'bn' ? 'অনুগ্রহ করে প্রথমে ডাক্তার হিসেবে নিবন্ধন করুন।' : 'Please register as a doctor first.'}</p>
+        <Button className="mt-4 font-bangla" onClick={() => navigate('/doctor/register')}>
+          {lang === 'bn' ? 'ডাক্তার রেজিস্ট্রেশন ফর্ম খুলুন' : 'Open doctor registration form'}
+        </Button>
       </div>
     );
   }

@@ -259,16 +259,51 @@ export default function UserDashboard() {
         </CardHeader>
         <CardContent>
           {prescriptions && prescriptions.length > 0 ? (
-            <div className="space-y-3">
-              {prescriptions.map(rx => (
-                <div key={rx.id} className="border rounded-lg p-3">
-                  <div className="flex items-center justify-between mb-1">
-                    <Badge variant={rx.status === 'signed' ? 'default' : 'secondary'}>{rx.status}</Badge>
-                    <span className="text-xs text-muted-foreground">{new Date(rx.created_at).toLocaleDateString()}</span>
-                  </div>
-                  {rx.patient_symptoms && <p className="text-sm font-bangla truncate">{rx.patient_symptoms}</p>}
+            <div className="space-y-4">
+              <div>
+                <p className="text-xs uppercase font-semibold text-muted-foreground mb-2">
+                  {lang === 'bn' ? 'যাচাই করা প্রেসক্রিপশন' : 'Verified Prescriptions'}
+                </p>
+                <div className="space-y-3">
+                  {prescriptions.filter(rx => rx.status === 'signed').length > 0 ? (
+                    prescriptions.filter(rx => rx.status === 'signed').map(rx => (
+                      <div key={rx.id} className="border rounded-lg p-3">
+                        <div className="flex items-center justify-between mb-1">
+                          <Badge>{lang === 'bn' ? 'যাচাইকৃত' : 'Verified'}</Badge>
+                          <span className="text-xs text-muted-foreground">{new Date(rx.created_at).toLocaleDateString()}</span>
+                        </div>
+                        {rx.patient_symptoms && <p className="text-sm font-bangla truncate">{rx.patient_symptoms}</p>}
+                        {rx.registered_doctors?.full_name && (
+                          <p className="text-xs text-muted-foreground mt-1">Dr. {rx.registered_doctors.full_name}</p>
+                        )}
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground font-bangla">{lang === 'bn' ? 'কোনো যাচাইকৃত প্রেসক্রিপশন নেই' : 'No verified prescriptions yet'}</p>
+                  )}
                 </div>
-              ))}
+              </div>
+
+              <div>
+                <p className="text-xs uppercase font-semibold text-muted-foreground mb-2">
+                  {lang === 'bn' ? 'অপেক্ষমাণ প্রেসক্রিপশন' : 'Pending Prescriptions'}
+                </p>
+                <div className="space-y-3">
+                  {prescriptions.filter(rx => rx.status !== 'signed').length > 0 ? (
+                    prescriptions.filter(rx => rx.status !== 'signed').map(rx => (
+                      <div key={rx.id} className="border rounded-lg p-3">
+                        <div className="flex items-center justify-between mb-1">
+                          <Badge variant="secondary">{rx.status}</Badge>
+                          <span className="text-xs text-muted-foreground">{new Date(rx.created_at).toLocaleDateString()}</span>
+                        </div>
+                        {rx.patient_symptoms && <p className="text-sm font-bangla truncate">{rx.patient_symptoms}</p>}
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground font-bangla">{lang === 'bn' ? 'কোনো অপেক্ষমাণ প্রেসক্রিপশন নেই' : 'No pending prescriptions'}</p>
+                  )}
+                </div>
+              </div>
             </div>
           ) : (
             <p className="text-center text-muted-foreground font-bangla py-4">

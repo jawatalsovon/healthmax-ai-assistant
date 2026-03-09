@@ -17,6 +17,7 @@ interface Props {
 
 export function PrescriptionRequest({ sessionId, triageResult, patientInfo, lang }: Props) {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [status, setStatus] = useState<'idle' | 'requesting' | 'pending' | 'signed' | 'error'>('idle');
   const [prescriptionId, setPrescriptionId] = useState<string | null>(null);
   const [prescription, setPrescription] = useState<any>(null);

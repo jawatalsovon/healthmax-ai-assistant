@@ -83,7 +83,7 @@ export function PrescriptionRequest({ sessionId, triageResult, patientInfo, lang
           .from('patient_profiles')
           .insert({
             user_id: user.id,
-            full_name: patientInfo?.name || null,
+            full_name: patientInfo?.full_name || null,
             age: patientInfo?.age || null,
             gender: patientInfo?.gender || null,
           })
@@ -116,6 +116,21 @@ export function PrescriptionRequest({ sessionId, triageResult, patientInfo, lang
         triage_summary: triageResult,
         status: 'pending_review',
       };
+
+      if (selectedDoctor !== 'any') {
+        insertData.preferred_doctor_id = selectedDoctor;
+      } else if (doctors.length > 0) {
+        const randomDoctor = doctors[Math.floor(Math.random() * doctors.length)];
+        insertData.preferred_doctor_id = randomDoctor.id;
+      }
+
+      const { data, error } = await supabase
+        .from('prescriptions')
+        .insert(insertData)
+        .select('id')
+        .single();
+
+      if (error) throw error;
       setPrescriptionId(data.id);
       setStatus('pending');
       toast({

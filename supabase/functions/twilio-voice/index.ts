@@ -1,5 +1,13 @@
+// @ts-ignore: URL imports are resolved by Deno runtime in Supabase Edge Functions.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+// @ts-ignore: URL imports are resolved by Deno runtime in Supabase Edge Functions.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+declare const Deno: {
+  env: {
+    get(key: string): string | undefined;
+  };
+};
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -8,7 +16,7 @@ const corsHeaders = {
 
 // Twilio Voice Webhook Handler
 // Handles incoming calls, speech recognition in Bangla, and TTS responses
-serve(async (req) => {
+serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   const TWILIO_ACCOUNT_SID = Deno.env.get("TWILIO_ACCOUNT_SID");
@@ -24,7 +32,7 @@ serve(async (req) => {
   try {
     const url = new URL(req.url);
     const action = url.searchParams.get("action") || "greeting";
-    
+
     // Parse form data from Twilio webhook
     let formData: Record<string, string> = {};
     if (req.method === "POST") {
@@ -80,7 +88,7 @@ serve(async (req) => {
 
       // Build Bangla response
       let responseText = triageData.explanation_bn || triageData.explanation || "আপনার লক্ষণ বিশ্লেষণ করা হয়েছে।";
-      
+
       if (triageData.urgency_level === "emergency") {
         responseText = `জরুরি সতর্কতা! ${responseText}`;
       }
@@ -113,13 +121,13 @@ serve(async (req) => {
       const speechResult = (formData["SpeechResult"] || "").toLowerCase();
       const sessionId = new URL(req.url).searchParams.get("session_id") || "";
       const callerPhone = formData["From"] || "";
-      
+
       const wantsPrescription = speechResult.includes("হ্যাঁ") || speechResult.includes("yes") || speechResult.includes("ha");
 
       if (wantsPrescription && sessionId) {
         // Create prescription request
         const supabase = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-        
+
         // Get session data
         const { data: session } = await supabase
           .from("triage_sessions")

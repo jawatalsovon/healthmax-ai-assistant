@@ -15,6 +15,50 @@ import { FollowUpQuestions } from '@/components/FollowUpQuestions';
 import { TriageResultCard } from '@/components/TriageResultCard';
 import { PrescriptionRequest } from '@/components/PrescriptionRequest';
 
+const LOCAL_BACKEND_URL = (import.meta.env.VITE_HEALTHMAX_API_URL as string | undefined)?.trim();
+
+function normalizeUrgencyLevel(level?: string): string {
+  const normalized = (level || '').toLowerCase();
+  if (normalized === 'emergency') return 'emergency';
+  if (normalized === 'urgent') return 'urgent';
+  if (normalized === 'self-care' || normalized === 'self_care') return 'self_care';
+  if (normalized === 'moderate') return 'moderate';
+  return 'moderate';
+}
+
+function normalizeBackendResult(data: any): TriageResult {
+  const diseases = Array.isArray(data?.diseases)
+    ? data.diseases
+    : Array.isArray(data?.top_diseases)
+      ? data.top_diseases.map((d: any) => ({
+          name: d.disease || d.name || 'Unknown',
+          name_bn: d.disease || d.name_bn || d.name || 'Unknown',
+          confidence: Math.round(((d.probability ?? d.confidence ?? 0) <= 1 ? (d.probability ?? d.confidence ?? 0) * 100 : (d.probability ?? d.confidence ?? 0)) * 100) / 100,
+        }))
+      : [];
+
+  const medicines = Array.isArray(data?.medicines)
+    ? data.medicines
+    : Array.isArray(data?.drug_recommendations)
+      ? data.drug_recommendations.map((m: any) => ({
+          name: m.brand_example || m.name || 'Unknown',
+          generic: m.generic_name || m.generic || 'Unknown',
+          price: m.price ? String(m.price) : `৳${Number(m.price_bdt || 0).toFixed(2)} / ${m.unit || 'unit'}`,
+        }))
+      : [];
+
+  return {
+    ...data,
+    urgency_level: normalizeUrgencyLevel(data?.urgency_level),
+    diseases,
+    medicines,
+    recommended_facility: data?.recommended_facility || data?.facility_recommendation,
+    recommended_facility_bn: data?.recommended_facility_bn || data?.facility_recommendation,
+    explanation: data?.explanation || data?.llm_response || '',
+    explanation_bn: data?.explanation_bn || data?.llm_response || data?.explanation || '',
+  };
+}
+
 export default function Triage() {
   const { t, lang } = useLanguage();
   const { toast } = useToast();
@@ -69,17 +113,39 @@ export default function Triage() {
     setIsLoading(true);
 
     try {
-      const { data, error } = await supabase.functions.invoke('healthmax-triage', {
-        body: {
-          symptoms: msg,
-          language: lang,
-          session_id: sessionId,
-          conversation: [...messages, userMessage].map(m => ({ role: m.role, content: m.content })),
-          patient_info: patientInfo,
-        },
-      });
+      let data: any;
 
-      if (error) throw error;
+      if (LOCAL_BACKEND_URL) {
+        const response = await fetch(`${LOCAL_BACKEND_URL.replace(/\/$/, '')}/api/triage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: msg,
+            language: lang,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(errorText || `Local backend error (${response.status})`);
+        }
+
+        data = normalizeBackendResult(await response.json());
+      } else {
+        const { data: functionData, error } = await supabase.functions.invoke('healthmax-triage', {
+          body: {
+            symptoms: msg,
+            language: lang,
+            session_id: sessionId,
+            conversation: [...messages, userMessage].map(m => ({ role: m.role, content: m.content })),
+            patient_info: patientInfo,
+          },
+        });
+
+        if (error) throw error;
+        data = normalizeBackendResult(functionData);
+      }
+
       if (data.session_id) setSessionId(data.session_id);
 
       const assistantMsg: Message = {

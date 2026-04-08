@@ -18,11 +18,30 @@ export interface Medicine {
 }
 
 export interface FollowUpQuestion {
+  id?: string;
   question_en: string;
   question_bn: string;
   type: 'yes_no' | 'choice' | 'open';
   options_en?: string[];
   options_bn?: string[];
+}
+
+export interface FollowUpAnswer {
+  question_id: string;
+  question_en: string;
+  question_bn: string;
+  answer: string;
+}
+
+export interface DoctorRecommendation {
+  name: string;
+  specialization: string;
+  hospital: string;
+  area: string;
+  tagline: string;
+  contact: string;
+  photo?: string;
+  sponsored?: boolean;
 }
 
 export interface TriageResult {
@@ -42,6 +61,12 @@ export interface TriageResult {
   ai_fallback?: boolean;
   can_generate_prescription?: boolean;
   session_id?: string;
+  assessment_round?: number;
+  assessment_total_rounds?: number;
+  assessment_stage?: 'initial' | 'follow_up' | 'final';
+  is_final_assessment?: boolean;
+  partner_doctors?: DoctorRecommendation[];
+  doctor_specialization_key?: string;
 }
 
 export interface Message {

@@ -8,12 +8,12 @@ import { ConfidenceBar } from '@/components/ConfidenceBar';
 import { Mic, MicOff, Send, Loader2, AlertTriangle, Brain, Shield, Pill, FileText } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
-import { TriageResult, Message, FollowUpQuestion } from '@/types/triage';
+import { TriageResult, Message, FollowUpAnswer } from '@/types/triage';
 import { PatientInfoForm } from '@/components/PatientInfoForm';
 import { FollowUpQuestions } from '@/components/FollowUpQuestions';
 import { TriageResultCard } from '@/components/TriageResultCard';
 import { PrescriptionRequest } from '@/components/PrescriptionRequest';
-import { runBrowserTriage } from '@/lib/browserTriage';
+import { runBrowserTriage, TriageSessionState } from '@/lib/browserTriage';
 
 function normalizeUrgencyLevel(level?: string): string {
   const normalized = (level || '').toLowerCase();
@@ -65,6 +65,7 @@ export default function Triage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [triageSession, setTriageSession] = useState<TriageSessionState | null>(null);
   const [showPatientForm, setShowPatientForm] = useState(true);
   const [patientInfo, setPatientInfo] = useState<any>(null);
   const [latestResult, setLatestResult] = useState<TriageResult | null>(null);
@@ -101,19 +102,31 @@ export default function Triage() {
     setIsRecording(false);
   };
 
-  const sendMessage = async (text?: string) => {
+  const sendMessage = async (text?: string, followUpAnswers: FollowUpAnswer[] = []) => {
     const msg = text || input.trim();
-    if (!msg || isLoading) return;
+    if (isLoading) return;
+    if (!msg && followUpAnswers.length === 0) return;
 
-    const userMessage: Message = { role: 'user', content: msg };
+    const displayText = followUpAnswers.length > 0
+      ? followUpAnswers.map((answer) => `Q: ${lang === 'bn' ? answer.question_bn : answer.question_en}\nA: ${answer.answer}`).join('\n\n')
+      : msg;
+    const userMessage: Message = { role: 'user', content: displayText };
     setMessages(prev => [...prev, userMessage]);
     setInput('');
     setIsLoading(true);
 
     try {
-      const data = normalizeBackendResult(await runBrowserTriage(msg));
+      const requestSession = followUpAnswers.length > 0 ? triageSession : null;
+      if (!followUpAnswers.length) {
+        setTriageSession(null);
+      }
+      const raw = await runBrowserTriage(msg, requestSession, followUpAnswers);
+      const data = normalizeBackendResult(raw);
 
       if (data.session_id) setSessionId(data.session_id);
+      if ((raw as any).triage_session) {
+        setTriageSession((raw as any).triage_session as TriageSessionState);
+      }
 
       const assistantMsg: Message = {
         role: 'assistant',
@@ -133,7 +146,7 @@ export default function Triage() {
     }
   };
 
-  const handleFollowUpAnswer = (answer: string) => sendMessage(answer);
+  const handleFollowUpAnswer = (answers: FollowUpAnswer[]) => sendMessage('', answers);
 
   const handlePatientInfoSubmit = (info: any) => {
     setPatientInfo(info);

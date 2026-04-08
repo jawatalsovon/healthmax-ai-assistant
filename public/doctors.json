@@ -1,0 +1,258 @@
+{
+  "general-medicine": [
+    {
+      "name": "Dr. Farhana Rahman",
+      "specialization": "General Physician",
+      "hospital": "CityCare Medical",
+      "area": "Dhanmondi",
+      "tagline": "Primary care and adult medicine",
+      "contact": "#",
+      "photo": "",
+      "sponsored": true
+    },
+    {
+      "name": "Dr. Imran Hossain",
+      "specialization": "General Physician",
+      "hospital": "Shurokkha Clinic",
+      "area": "Mirpur",
+      "tagline": "Community-focused diagnosis and follow-up",
+      "contact": "#",
+      "photo": "",
+      "sponsored": true
+    },
+    {
+      "name": "Dr. Nabila Karim",
+      "specialization": "General Physician",
+      "hospital": "Prime Health Point",
+      "area": "Uttara",
+      "tagline": "Everyday family medicine support",
+      "contact": "#",
+      "photo": "",
+      "sponsored": true
+    }
+  ],
+  "infectious-disease": [
+    {
+      "name": "Dr. Tanim Ahmed",
+      "specialization": "Infectious Disease Specialist",
+      "hospital": "Metro Diagnostic",
+      "area": "Mohammadpur",
+      "tagline": "Fever, dengue and infection management",
+      "contact": "#",
+      "photo": "",
+      "sponsored": true
+    },
+    {
+      "name": "Dr. Sadia Noor",
+      "specialization": "Infectious Disease Specialist",
+      "hospital": "Green Crescent Hospital",
+      "area": "Gulshan",
+      "tagline": "Tropical and seasonal infection care",
+      "contact": "#",
+      "photo": "",
+      "sponsored": true
+    },
+    {
+      "name": "Dr. Mehedi Hasan",
+      "specialization": "Infectious Disease Specialist",
+      "hospital": "WellSpring Medical",
+      "area": "Bashundhara",
+      "tagline": "Consultant for persistent fever cases",
+      "contact": "#",
+      "photo": "",
+      "sponsored": true
+    }
+  ],
+  "respiratory": [
+    {
+      "name": "Dr. Rashedul Islam",
+      "specialization": "Chest & Respiratory Specialist",
+      "hospital": "LungCare Clinic",
+      "area": "Dhanmondi",
+      "tagline": "Asthma, cough and breathing difficulty",
+      "contact": "#",
+      "photo": "",
+      "sponsored": true
+    },
+    {
+      "name": "Dr. Sharmin Akter",
+      "specialization": "Pulmonologist",
+      "hospital": "Respira Health",
+      "area": "Uttara",
+      "tagline": "Focused on long-term breathing care",
+      "contact": "#",
+      "photo": "",
+      "sponsored": true
+    },
+    {
+      "name": "Dr. Fahim Chowdhury",
+      "specialization": "Chest Specialist",
+      "hospital": "Mirpur Care Hospital",
+      "area": "Mirpur",
+      "tagline": "Respiratory diagnosis and follow-up",
+      "contact": "#",
+      "photo": "",
+      "sponsored": true
+    }
+  ],
+  "gastroenterology": [
+    {
+      "name": "Dr. Samia Kabir",
+      "specialization": "Gastroenterologist",
+      "hospital": "Digestive Care Center",
+      "area": "Gulshan",
+      "tagline": "Stomach pain, diarrhea and gut issues",
+      "contact": "#",
+      "photo": "",
+      "sponsored": true
+    },
+    {
+      "name": "Dr. Arif Mahmud",
+      "specialization": "Gastroenterologist",
+      "hospital": "Dhaka Central Clinic",
+      "area": "Dhanmondi",
+      "tagline": "Digestive health and liver support",
+      "contact": "#",
+      "photo": "",
+      "sponsored": true
+    },
+    {
+      "name": "Dr. Nusrat Jahan",
+      "specialization": "Gastroenterologist",
+      "hospital": "NorthPoint Hospital",
+      "area": "Uttara",
+      "tagline": "Consultant for dehydration and GI cases",
+      "contact": "#",
+      "photo": "",
+      "sponsored": true
+    }
+  ],
+  "cardiology": [
+    {
+      "name": "Dr. Omar Faruq",
+      "specialization": "Cardiologist",
+      "hospital": "HeartLine Medical",
+      "area": "Banani",
+      "tagline": "Chest pain and cardiac risk review",
+      "contact": "#",
+      "photo": "",
+      "sponsored": true
+    },
+    {
+      "name": "Dr. Tasnia Sultana",
+      "specialization": "Cardiologist",
+      "hospital": "Pulse Diagnostics",
+      "area": "Gulshan",
+      "tagline": "10+ years in cardiology practice",
+      "contact": "#",
+      "photo": "",
+      "sponsored": true
+    },
+    {
+      "name": "Dr. Anik Roy",
+      "specialization": "Cardiologist",
+      "hospital": "Mirpur Heart Care",
+      "area": "Mirpur",
+      "tagline": "Senior consultant for urgent cardiac review",
+      "contact": "#",
+      "photo": "",
+      "sponsored": true
+    }
+  ],
+  "neurology": [
+    {
+      "name": "Dr. Subrina Haque",
+      "specialization": "Neurologist",
+      "hospital": "Neuro Point",
+      "area": "Dhanmondi",
+      "tagline": "Headache, seizure and nerve-related care",
+      "contact": "#",
+      "photo": "",
+      "sponsored": true
+    },
+    {
+      "name": "Dr. Iftekhar Alam",
+      "specialization": "Neurologist",
+      "hospital": "Brain & Spine Clinic",
+      "area": "Uttara",
+      "tagline": "Focused on dizziness and neuro symptoms",
+      "contact": "#",
+      "photo": "",
+      "sponsored": true
+    },
+    {
+      "name": "Dr. Rubaida Islam",
+      "specialization": "Neurologist",
+      "hospital": "City Neuro Care",
+      "area": "Bashundhara",
+      "tagline": "Evaluation of recurring neurological issues",
+      "contact": "#",
+      "photo": "",
+      "sponsored": true
+    }
+  ],
+  "endocrinology": [
+    {
+      "name": "Dr. Nafisa Ahmed",
+      "specialization": "Endocrinologist",
+      "hospital": "Hormone Care Center",
+      "area": "Dhanmondi",
+      "tagline": "Diabetes and metabolic condition support",
+      "contact": "#",
+      "photo": "",
+      "sponsored": true
+    },
+    {
+      "name": "Dr. Mahfuz Karim",
+      "specialization": "Endocrinologist",
+      "hospital": "Glucose Point",
+      "area": "Mirpur",
+      "tagline": "Consultant for chronic diabetic care",
+      "contact": "#",
+      "photo": "",
+      "sponsored": true
+    },
+    {
+      "name": "Dr. Sabiha Yasmin",
+      "specialization": "Endocrinologist",
+      "hospital": "North Endocrine Clinic",
+      "area": "Uttara",
+      "tagline": "Long-term diabetes and thyroid follow-up",
+      "contact": "#",
+      "photo": "",
+      "sponsored": true
+    }
+  ],
+  "dermatology": [
+    {
+      "name": "Dr. Adiba Noor",
+      "specialization": "Dermatologist",
+      "hospital": "Skin Studio Medical",
+      "area": "Gulshan",
+      "tagline": "Rash, allergy and skin irritation care",
+      "contact": "#",
+      "photo": "",
+      "sponsored": true
+    },
+    {
+      "name": "Dr. Raihan Alam",
+      "specialization": "Dermatologist",
+      "hospital": "Dermacare Clinic",
+      "area": "Banani",
+      "tagline": "Special interest in recurring skin conditions",
+      "contact": "#",
+      "photo": "",
+      "sponsored": true
+    },
+    {
+      "name": "Dr. Marium Hossain",
+      "specialization": "Dermatologist",
+      "hospital": "Mirpur Skin Point",
+      "area": "Mirpur",
+      "tagline": "Practical care for common dermatology cases",
+      "contact": "#",
+      "photo": "",
+      "sponsored": true
+    }
+  ]
+}

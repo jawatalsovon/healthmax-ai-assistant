@@ -6,7 +6,6 @@ import { Card, CardContent } from '@/components/ui/card';
 import { UrgencyBadge } from '@/components/UrgencyBadge';
 import { ConfidenceBar } from '@/components/ConfidenceBar';
 import { Mic, MicOff, Send, Loader2, AlertTriangle, Brain, Shield, Pill, FileText } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { TriageResult, Message, FollowUpQuestion } from '@/types/triage';
@@ -14,8 +13,7 @@ import { PatientInfoForm } from '@/components/PatientInfoForm';
 import { FollowUpQuestions } from '@/components/FollowUpQuestions';
 import { TriageResultCard } from '@/components/TriageResultCard';
 import { PrescriptionRequest } from '@/components/PrescriptionRequest';
-
-const LOCAL_BACKEND_URL = (import.meta.env.VITE_HEALTHMAX_API_URL as string | undefined)?.trim();
+import { runBrowserTriage } from '@/lib/browserTriage';
 
 function normalizeUrgencyLevel(level?: string): string {
   const normalized = (level || '').toLowerCase();
@@ -113,38 +111,7 @@ export default function Triage() {
     setIsLoading(true);
 
     try {
-      let data: any;
-
-      if (LOCAL_BACKEND_URL) {
-        const response = await fetch(`${LOCAL_BACKEND_URL.replace(/\/$/, '')}/api/triage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text: msg,
-            language: lang,
-          }),
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(errorText || `Local backend error (${response.status})`);
-        }
-
-        data = normalizeBackendResult(await response.json());
-      } else {
-        const { data: functionData, error } = await supabase.functions.invoke('healthmax-triage', {
-          body: {
-            symptoms: msg,
-            language: lang,
-            session_id: sessionId,
-            conversation: [...messages, userMessage].map(m => ({ role: m.role, content: m.content })),
-            patient_info: patientInfo,
-          },
-        });
-
-        if (error) throw error;
-        data = normalizeBackendResult(functionData);
-      }
+      const data = normalizeBackendResult(await runBrowserTriage(msg));
 
       if (data.session_id) setSessionId(data.session_id);
 

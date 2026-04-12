@@ -69,6 +69,8 @@ export type TriageSessionState = {
   assessment_total_rounds: number;
   initial_text: string;
   transcript: string[];
+  asked_question_ids: string[];
+  answers: FollowUpAnswer[];
 };
 
 type DiseasePrediction = {
@@ -95,6 +97,16 @@ type TriageDecision = {
   top_disease: string;
   top_diseases: DiseasePrediction[];
   action_instruction: string;
+};
+
+type FollowUpQuestionSpec = FollowUpQuestion & {
+  disease_keys: string[];
+  evidence_yes?: Record<string, number>;
+  evidence_no?: Record<string, number>;
+  open_keyword_impacts?: Array<{
+    keywords: string[];
+    impacts: Record<string, number>;
+  }>;
 };
 
 const ARTIFACT_BASE = "/model";
@@ -227,6 +239,11 @@ let doctorsPromise: Promise<DoctorsBySpecialization> | null = null;
 
 const DEFAULT_SPECIALIZATION = "general-medicine";
 const TOTAL_ASSESSMENT_ROUNDS = 3;
+
+const QUESTION_COUNT_BY_ROUND: Record<number, number> = {
+  1: 4,
+  2: 3,
+};
 
 const DISEASE_SPECIALIZATION_MAP: Array<{ match: string; specialization: string }> = [
   { match: "dengue", specialization: "infectious-disease" },
@@ -367,6 +384,207 @@ const FOLLOW_UP_QUESTION_BANK: Record<string, { round1: FollowUpQuestion[]; roun
       { id: "med_try", question_en: "Have you taken any medicine already?", question_bn: "ইতিমধ্যে কোনো ওষুধ খেয়েছেন কি?", type: "yes_no" },
     ],
   },
+};
+
+const DISEASE_FOLLOW_UP_BANK: Record<string, FollowUpQuestionSpec[]> = {
+  dengue: [
+    {
+      id: "dengue_rash",
+      question_en: "Do you have a skin rash or red spots?",
+      question_bn: "ত্বকে র্যাশ বা লাল দাগ আছে কি?",
+      type: "yes_no",
+      disease_keys: ["dengue"],
+      evidence_yes: { dengue: 0.95, malaria: -0.2, typhoid: -0.15 },
+      evidence_no: { dengue: -0.35 },
+    },
+    {
+      id: "dengue_eye_pain",
+      question_en: "Do you feel pain behind the eyes?",
+      question_bn: "চোখের পেছনে ব্যথা আছে কি?",
+      type: "yes_no",
+      disease_keys: ["dengue"],
+      evidence_yes: { dengue: 1.05, malaria: -0.2, cold: -0.2 },
+      evidence_no: { dengue: -0.3 },
+    },
+    {
+      id: "dengue_bleeding",
+      question_en: "Any gum bleeding or unusual bleeding?",
+      question_bn: "মাড়ি থেকে রক্ত বা অস্বাভাবিক রক্তপাত হচ্ছে কি?",
+      type: "yes_no",
+      disease_keys: ["dengue"],
+      evidence_yes: { dengue: 1.2, typhoid: -0.2, malaria: -0.15 },
+    },
+  ],
+  malaria: [
+    {
+      id: "malaria_chills",
+      question_en: "Do you get chills or shivering spells with fever?",
+      question_bn: "জ্বরের সাথে কাঁপুনি হয় কি?",
+      type: "yes_no",
+      disease_keys: ["malaria"],
+      evidence_yes: { malaria: 1.15, dengue: -0.15, typhoid: -0.1 },
+      evidence_no: { malaria: -0.35 },
+    },
+    {
+      id: "malaria_fever_cycle",
+      question_en: "Does the fever come in repeated cycles?",
+      question_bn: "জ্বর কি নির্দিষ্ট বিরতিতে বারবার আসে?",
+      type: "yes_no",
+      disease_keys: ["malaria"],
+      evidence_yes: { malaria: 1.1, dengue: -0.15 },
+      evidence_no: { malaria: -0.2 },
+    },
+  ],
+  typhoid: [
+    {
+      id: "typhoid_abdominal",
+      question_en: "Do you have abdominal pain or discomfort?",
+      question_bn: "পেটে ব্যথা বা অস্বস্তি আছে কি?",
+      type: "yes_no",
+      disease_keys: ["typhoid"],
+      evidence_yes: { typhoid: 0.85, dengue: -0.15, malaria: -0.1 },
+      evidence_no: { typhoid: -0.2 },
+    },
+    {
+      id: "typhoid_diarrhea_constipation",
+      question_en: "Do you have diarrhea or constipation with the fever?",
+      question_bn: "জ্বরের সাথে ডায়রিয়া বা কোষ্ঠকাঠিন্য আছে কি?",
+      type: "yes_no",
+      disease_keys: ["typhoid"],
+      evidence_yes: { typhoid: 0.95, dengue: -0.15, malaria: -0.15 },
+      evidence_no: { typhoid: -0.25 },
+    },
+  ],
+  pneumonia: [
+    {
+      id: "pneumonia_phlegm",
+      question_en: "Are you coughing with phlegm?",
+      question_bn: "কাশির সাথে কফ হচ্ছে কি?",
+      type: "yes_no",
+      disease_keys: ["pneumonia"],
+      evidence_yes: { pneumonia: 1.0, asthma: -0.2, cold: -0.1 },
+      evidence_no: { pneumonia: -0.3 },
+    },
+    {
+      id: "pneumonia_chest_pain",
+      question_en: "Do you feel chest pain while breathing or coughing?",
+      question_bn: "শ্বাস নেওয়া বা কাশির সময় বুক ব্যথা হয় কি?",
+      type: "yes_no",
+      disease_keys: ["pneumonia"],
+      evidence_yes: { pneumonia: 1.1, asthma: -0.15 },
+      evidence_no: { pneumonia: -0.2 },
+    },
+  ],
+  asthma: [
+    {
+      id: "asthma_wheeze",
+      question_en: "Do you hear a wheezing sound while breathing?",
+      question_bn: "শ্বাস নেয়ার সময় সাঁ সাঁ শব্দ হয় কি?",
+      type: "yes_no",
+      disease_keys: ["asthma"],
+      evidence_yes: { asthma: 1.15, pneumonia: -0.15, cold: -0.1 },
+      evidence_no: { asthma: -0.4 },
+    },
+    {
+      id: "asthma_night",
+      question_en: "Are breathing symptoms worse at night or early morning?",
+      question_bn: "রাতে বা ভোরে শ্বাসকষ্ট বাড়ে কি?",
+      type: "yes_no",
+      disease_keys: ["asthma"],
+      evidence_yes: { asthma: 0.95, pneumonia: -0.1 },
+      evidence_no: { asthma: -0.2 },
+    },
+  ],
+  diarrhea: [
+    {
+      id: "diarrhea_stool_count",
+      question_en: "How many loose stools have you had in the last 24 hours?",
+      question_bn: "গত ২৪ ঘণ্টায় কতবার পাতলা পায়খানা হয়েছে?",
+      type: "open",
+      disease_keys: ["diarrhea", "gastroenteritis"],
+      open_keyword_impacts: [
+        { keywords: ["5", "6", "7", "8", "9", "10"], impacts: { diarrhea: 0.9, gastroenteritis: 0.6 } },
+      ],
+    },
+    {
+      id: "diarrhea_vomit",
+      question_en: "Are you vomiting repeatedly?",
+      question_bn: "বারবার বমি হচ্ছে কি?",
+      type: "yes_no",
+      disease_keys: ["diarrhea", "gastroenteritis"],
+      evidence_yes: { gastroenteritis: 1.0, diarrhea: 0.45, typhoid: -0.1 },
+      evidence_no: { gastroenteritis: -0.2 },
+    },
+  ],
+  gastroenteritis: [
+    {
+      id: "gastro_food",
+      question_en: "Did symptoms start after eating outside food?",
+      question_bn: "বাইরের খাবার খাওয়ার পর থেকে শুরু হয়েছে কি?",
+      type: "yes_no",
+      disease_keys: ["gastroenteritis"],
+      evidence_yes: { gastroenteritis: 1.0, typhoid: -0.15 },
+      evidence_no: { gastroenteritis: -0.2 },
+    },
+    {
+      id: "gastro_cramps",
+      question_en: "Do you have stomach cramps?",
+      question_bn: "পেটে মোচড় দিয়ে ব্যথা হচ্ছে কি?",
+      type: "yes_no",
+      disease_keys: ["gastroenteritis"],
+      evidence_yes: { gastroenteritis: 0.85, diarrhea: 0.2, typhoid: -0.1 },
+    },
+  ],
+  cold: [
+    {
+      id: "cold_runny_nose",
+      question_en: "Do you have a runny nose or sneezing?",
+      question_bn: "নাক দিয়ে পানি পড়া বা হাঁচি আছে কি?",
+      type: "yes_no",
+      disease_keys: ["cold"],
+      evidence_yes: { cold: 1.0, pneumonia: -0.2, dengue: -0.2 },
+      evidence_no: { cold: -0.35 },
+    },
+  ],
+  allergy: [
+    {
+      id: "allergy_itch",
+      question_en: "Is there itching with the rash?",
+      question_bn: "র্যাশের সাথে চুলকানি আছে কি?",
+      type: "yes_no",
+      disease_keys: ["allergy"],
+      evidence_yes: { allergy: 1.1, dengue: -0.2 },
+      evidence_no: { allergy: -0.35 },
+    },
+    {
+      id: "allergy_trigger",
+      question_en: "Did it start after a new food, soap, or medicine?",
+      question_bn: "নতুন খাবার, সাবান, বা ওষুধের পর শুরু হয়েছে কি?",
+      type: "yes_no",
+      disease_keys: ["allergy"],
+      evidence_yes: { allergy: 1.0, dengue: -0.15 },
+    },
+  ],
+  diabetes: [
+    {
+      id: "diabetes_thirst",
+      question_en: "Are you feeling unusually thirsty?",
+      question_bn: "অস্বাভাবিক বেশি পিপাসা লাগে কি?",
+      type: "yes_no",
+      disease_keys: ["diabetes"],
+      evidence_yes: { diabetes: 1.05 },
+      evidence_no: { diabetes: -0.25 },
+    },
+    {
+      id: "diabetes_urine",
+      question_en: "Are you urinating much more often than usual?",
+      question_bn: "স্বাভাবিকের চেয়ে অনেক বেশি প্রস্রাব হচ্ছে কি?",
+      type: "yes_no",
+      disease_keys: ["diabetes"],
+      evidence_yes: { diabetes: 1.05 },
+      evidence_no: { diabetes: -0.25 },
+    },
+  ],
 };
 
 function normalizeSurface(text: string): string {
@@ -552,6 +770,8 @@ function createSession(initialText: string): TriageSessionState {
     assessment_total_rounds: TOTAL_ASSESSMENT_ROUNDS,
     initial_text: initialText,
     transcript: [],
+    asked_question_ids: [],
+    answers: [],
   };
 }
 
@@ -563,6 +783,144 @@ function pickDoctorSpecialization(topDisease: string): string {
     }
   }
   return DEFAULT_SPECIALIZATION;
+}
+
+function canonicalDiseaseKey(diseaseName: string): string {
+  const normalized = normalizeSurface(diseaseName || "");
+  if (normalized.includes("dengue") || normalized.includes("ডেঙ্গু")) return "dengue";
+  if (normalized.includes("malaria") || normalized.includes("ম্যালেরিয়া")) return "malaria";
+  if (normalized.includes("typhoid") || normalized.includes("টাইফ")) return "typhoid";
+  if (normalized.includes("pneumonia") || normalized.includes("নিউমোনিয়া")) return "pneumonia";
+  if (normalized.includes("asthma") || normalized.includes("হাঁপানি")) return "asthma";
+  if (normalized.includes("diarrhea") || normalized.includes("ডায়রিয়া") || normalized.includes("ডায়রিয়া")) return "diarrhea";
+  if (normalized.includes("gastroenteritis") || normalized.includes("গ্যাস্ট্রো")) return "gastroenteritis";
+  if (normalized.includes("allergy") || normalized.includes("অ্যালার্জি")) return "allergy";
+  if (normalized.includes("cold") || normalized.includes("সর্দি")) return "cold";
+  if (normalized.includes("diabetes") || normalized.includes("ডায়াবেটিস") || normalized.includes("ডায়াবেটিস")) return "diabetes";
+  return "";
+}
+
+function allQuestionSpecs(): FollowUpQuestionSpec[] {
+  return Object.values(DISEASE_FOLLOW_UP_BANK).flat();
+}
+
+function normalizeAnswerLabel(answer: string): "yes" | "no" | "other" {
+  const normalized = normalizeSurface(answer || "");
+  if (["yes", "হ্যাঁ", "haan", "ha"].includes(normalized)) return "yes";
+  if (["no", "না", "na"].includes(normalized)) return "no";
+  return "other";
+}
+
+function scoreOpenAnswer(answer: string, spec: FollowUpQuestionSpec): Record<string, number> {
+  const normalized = normalizeSurface(answer || "");
+  const impacts: Record<string, number> = {};
+
+  for (const rule of spec.open_keyword_impacts || []) {
+    if (rule.keywords.some((keyword) => normalized.includes(normalizeSurface(keyword)))) {
+      for (const [diseaseKey, value] of Object.entries(rule.impacts)) {
+        impacts[diseaseKey] = (impacts[diseaseKey] || 0) + value;
+      }
+    }
+  }
+
+  return impacts;
+}
+
+function applyAnswerEvidence(
+  predictions: DiseasePrediction[],
+  answers: FollowUpAnswer[],
+): DiseasePrediction[] {
+  if (!predictions.length || !answers.length) {
+    return predictions;
+  }
+
+  const specById = new Map(allQuestionSpecs().map((spec) => [spec.id, spec]));
+  const weights = new Map<string, number>();
+  predictions.forEach((prediction) => {
+    weights.set(prediction.disease, Math.max(prediction.probability || 0.0001, 0.0001));
+  });
+
+  for (const answer of answers) {
+    const spec = specById.get(answer.question_id);
+    if (!spec) continue;
+
+    const label = normalizeAnswerLabel(answer.answer);
+    const evidence =
+      label === "yes"
+        ? spec.evidence_yes || {}
+        : label === "no"
+          ? spec.evidence_no || {}
+          : scoreOpenAnswer(answer.answer, spec);
+
+    for (const prediction of predictions) {
+      const diseaseKey = canonicalDiseaseKey(prediction.disease);
+      const impact = evidence[diseaseKey] || 0;
+      if (!impact) continue;
+      const currentWeight = weights.get(prediction.disease) || 0.0001;
+      weights.set(prediction.disease, Math.max(currentWeight * Math.exp(impact), 0.00001));
+    }
+  }
+
+  const total = [...weights.values()].reduce((sum, value) => sum + value, 0) || 1;
+  return predictions
+    .map((prediction) => ({
+      ...prediction,
+      probability: (weights.get(prediction.disease) || 0) / total,
+    }))
+    .sort((left, right) => right.probability - left.probability);
+}
+
+function chooseQuestionsForCandidates(
+  predictions: DiseasePrediction[],
+  round: number,
+  askedQuestionIds: string[],
+  fallbackSpecialization: string,
+): FollowUpQuestion[] {
+  const asked = new Set(askedQuestionIds);
+  const candidateKeys = predictions
+    .slice(0, 3)
+    .map((prediction) => canonicalDiseaseKey(prediction.disease))
+    .filter(Boolean);
+
+  const scoredSpecs = allQuestionSpecs()
+    .filter((spec) => spec.id && !asked.has(spec.id))
+    .map((spec) => {
+      const relevance = predictions.slice(0, 3).reduce((sum, prediction) => {
+        const diseaseKey = canonicalDiseaseKey(prediction.disease);
+        if (!spec.disease_keys.includes(diseaseKey)) return sum;
+        return sum + prediction.probability;
+      }, 0);
+
+      const discrimination = spec.disease_keys.reduce((sum, key) => {
+        const yesImpact = Math.abs(spec.evidence_yes?.[key] || 0);
+        const noImpact = Math.abs(spec.evidence_no?.[key] || 0);
+        const openImpact = (spec.open_keyword_impacts || []).reduce((acc, rule) => acc + Math.abs(rule.impacts[key] || 0), 0);
+        return sum + yesImpact + noImpact + openImpact;
+      }, 0);
+
+      const matchesCurrentCandidates = spec.disease_keys.some((key) => candidateKeys.includes(key)) ? 1 : 0;
+      return { spec, score: relevance * 3 + discrimination + matchesCurrentCandidates * 2 };
+    })
+    .filter((item) => item.score > 0)
+    .sort((left, right) => right.score - left.score);
+
+  const selected = scoredSpecs
+    .slice(0, QUESTION_COUNT_BY_ROUND[round] || 3)
+    .map((item) => ({
+      id: item.spec.id,
+      question_en: item.spec.question_en,
+      question_bn: item.spec.question_bn,
+      type: item.spec.type,
+      options_en: item.spec.options_en,
+      options_bn: item.spec.options_bn,
+    }));
+
+  if (selected.length) {
+    return selected;
+  }
+
+  const fallback = questionsForRound(fallbackSpecialization, round);
+  return fallback.slice(0, QUESTION_COUNT_BY_ROUND[round] || 3);
 }
 
 function sharpenProbabilities(predictions: DiseasePrediction[], round: number): DiseasePrediction[] {
@@ -1219,6 +1577,7 @@ export async function runBrowserTriage(
     } else if (normalizedText) {
       activeSession.transcript.push(normalizedText);
     }
+    activeSession.answers.push(...followUpAnswers);
     activeSession.assessment_round = Math.min(activeSession.assessment_round + 1, activeSession.assessment_total_rounds);
   }
 
@@ -1246,8 +1605,12 @@ export async function runBrowserTriage(
   );
 
   const triageDecision = applyTriageRules(combinedInput, symptoms, classifierResults, ragResults, mergedPredictions);
-  const adjustedTopDiseases = sharpenProbabilities(
+  const evidenceAdjustedDiseases = applyAnswerEvidence(
     triageDecision.top_diseases ?? [],
+    activeSession.answers,
+  );
+  const adjustedTopDiseases = sharpenProbabilities(
+    evidenceAdjustedDiseases,
     activeSession.assessment_round,
   );
   const topPrediction = adjustedTopDiseases[0];
@@ -1269,7 +1632,19 @@ export async function runBrowserTriage(
 
   const followUpQuestions = isFinalAssessment
     ? []
-    : questionsForRound(doctorSpecialization, activeSession.assessment_round);
+    : chooseQuestionsForCandidates(
+        adjustedTopDiseases,
+        activeSession.assessment_round,
+        activeSession.asked_question_ids,
+        doctorSpecialization,
+      );
+
+  if (followUpQuestions.length) {
+    const nextIds = followUpQuestions
+      .map((question) => question.id)
+      .filter((id): id is string => Boolean(id));
+    activeSession.asked_question_ids = [...new Set([...activeSession.asked_question_ids, ...nextIds])];
+  }
 
   const llmResponse = isFinalAssessment
     ? templateResponse(
@@ -1277,8 +1652,8 @@ export async function runBrowserTriage(
         drugRecommendations,
       )
     : activeSession.assessment_round === 1
-      ? "Preliminary assessment ready. Please answer the follow-up questions so I can improve confidence."
-      : "Updated assessment prepared. A few more targeted questions will help finalize confidence.";
+      ? `Preliminary assessment ready. I am comparing ${adjustedTopDiseases.slice(0, 3).map((item) => item.disease).join(", ")}. Please answer these targeted questions so I can narrow it down.`
+      : `Updated assessment prepared. Based on your earlier answers, I am focusing on ${adjustedTopDiseases.slice(0, 2).map((item) => item.disease).join(" and ")}. These next questions should move the confidence more clearly.`;
 
   const specialist = topPrediction?.specialist || ragResults[0]?.specialist || "General Physician";
   const facilityRecommendation = triageDecision.facility || "উপজেলা স্বাস্থ্য কমপ্লেক্স";

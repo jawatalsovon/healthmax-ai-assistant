@@ -1427,20 +1427,16 @@ function applyTriageRules(
 
   let urgency = "SELF-CARE";
   if (topPrediction && topProbability >= 0.2) {
-    const topDisease = topPrediction.disease;
-    const highUrgencyDiseases = [
-      "Dengue",
-      "Typhoid",
-      "Pneumonia",
-      "Malaria",
-      "Cholera",
-      "ডেঙ্গু",
-      "টাইফয়েড",
-      "নিউমোনিয়া",
-      "ম্যালেরিয়া",
-      "কলেরা",
-    ];
-    if (highUrgencyDiseases.some((candidate) => topDisease.includes(candidate))) {
+    // Trust the matched disease's own clinical urgency rating instead of a
+    // hardcoded disease-name list, which silently fell back to SELF-CARE for
+    // any disease not on the list (e.g. Pneumonia, Bronchitis, Influenza,
+    // Hepatitis A all carry their own URGENT/EMERGENCY rating in the records).
+    const recordUrgency = String(topPrediction.urgency ?? "").toUpperCase();
+    if (recordUrgency in URGENCY_BANGLA) {
+      urgency = recordUrgency;
+    } else if (ragResults[0]?.urgency) {
+      urgency = String(ragResults[0].urgency).toUpperCase();
+    } else {
       urgency = "URGENT";
     }
   } else if (ragResults[0]?.urgency) {

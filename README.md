@@ -1,73 +1,38 @@
-# Welcome to your Lovable project
+# HealthMax web app
 
-## Project info
+The web front end of **[HealthMax](https://github.com/Shafin2954/HealthMax)**, a Bangla, voice-first AI health triage prototype built for the Harvard HSIL Hackathon 2026. **Archived October 2026.**
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+> [!WARNING]
+> Research prototype, not a medical device. It caught only 53% of emergencies on our benchmark (see the main repo's `docs/EVALUATION.md`). The doctors listed in `public/doctors.json` are fictional demo data.
 
-## How can I edit this code?
+## What's here
 
-There are several ways of editing your application.
+- **In-browser triage engine** (`src/lib/browserTriage.ts`): symptom extraction, TF-IDF disease retrieval, an XGBoost classifier exported to JSON, fusion, emergency rules and follow-up questions, running entirely client-side from `public/model/*.json`.
+- **Triage chat** (`src/pages/Triage.tsx`): Bangla and English UI, voice input through the Web Speech API (`bn-BD`), up to 3 rounds of follow-up questions.
+- **Medicine search**, plus patient, doctor and admin dashboards, and doctor registration (collects a BMDC number).
+- **Supabase**: auth and roles, Postgres schema (`supabase/migrations/`), and Edge Functions for triage proxying, medicine search and import, SMS, and Twilio voice and WhatsApp.
 
-**Use Lovable**
+## Stack
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+React 18 · TypeScript · Vite · Tailwind · shadcn/ui · Supabase · Vitest. Originally scaffolded with Lovable.
 
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
+## Run
 
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+npm install
+npm run dev        # http://localhost:8080
 ```
 
-**Edit a file directly in GitHub**
+`.env` holds the Supabase URL and publishable (anon) key, which are public by design (they ship in the browser bundle). Data access depends on the Supabase row-level security policies in `supabase/migrations/`.
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+Benchmark (needs the main repo checked out around this submodule):
 
-**Use GitHub Codespaces**
+```sh
+npx vite-node ../tests/eval_triage.ts
+```
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+Architecture, models, evaluation and post-mortem: see the [main repository](https://github.com/Shafin2954/HealthMax).
 
-## What technologies are used for this project?
+## License
 
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+[MIT](LICENSE).

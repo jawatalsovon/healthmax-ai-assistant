@@ -2,13 +2,13 @@ import { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
-import { FollowUpQuestion } from '@/types/triage';
+import { FollowUpAnswer, FollowUpQuestion } from '@/types/triage';
 import { Mic, MicOff } from 'lucide-react';
 
 interface Props {
   questions: FollowUpQuestion[];
   lang: 'bn' | 'en';
-  onSubmitAnswers: (combinedAnswer: string) => void;
+  onSubmitAnswers: (answers: FollowUpAnswer[]) => void;
   disabled?: boolean;
 }
 
@@ -21,13 +21,14 @@ export function FollowUpQuestions({ questions, lang, onSubmitAnswers, disabled }
   if (submitted) return null;
 
   const handleSubmit = () => {
-    const combined = questions.map((q, i) => {
-      const qText = lang === 'bn' ? q.question_bn : q.question_en;
-      const ans = answers[i] || (lang === 'bn' ? 'উত্তর দেওয়া হয়নি' : 'Not answered');
-      return `Q: ${qText}\nA: ${ans}`;
-    }).join('\n\n');
+    const payload: FollowUpAnswer[] = questions.map((q, i) => ({
+      question_id: q.id || `q_${i + 1}`,
+      question_en: q.question_en,
+      question_bn: q.question_bn,
+      answer: answers[i] || 'Not answered',
+    }));
     setSubmitted(true);
-    onSubmitAnswers(combined);
+    onSubmitAnswers(payload);
   };
 
   const startVoice = (index: number) => {
@@ -53,7 +54,7 @@ export function FollowUpQuestions({ questions, lang, onSubmitAnswers, disabled }
     setRecordingIndex(null);
   };
 
-  const allAnswered = questions.every((_, i) => answers[i]);
+  const allAnswered = questions.every((_, i) => (answers[i] || '').trim().length > 0);
 
   return (
     <Card className="bg-secondary/50 border-0">
@@ -62,7 +63,7 @@ export function FollowUpQuestions({ questions, lang, onSubmitAnswers, disabled }
           {lang === 'bn' ? 'অনুসরণমূলক প্রশ্ন' : 'Follow-up Questions'}
         </p>
         {questions.map((q, i) => (
-          <div key={i} className="space-y-2">
+          <div key={q.id || i} className="space-y-2">
             <p className="font-bangla text-sm font-medium">
               {i + 1}. {lang === 'bn' ? q.question_bn : q.question_en}
             </p>

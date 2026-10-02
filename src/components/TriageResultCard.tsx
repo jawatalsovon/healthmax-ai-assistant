@@ -3,6 +3,7 @@ import { ConfidenceBar } from '@/components/ConfidenceBar';
 import { Badge } from '@/components/ui/badge';
 import { Brain } from 'lucide-react';
 import { TriageResult } from '@/types/triage';
+import { DoctorRecommendations } from '@/components/DoctorRecommendations';
 
 interface Props {
   result: TriageResult;
@@ -13,12 +14,30 @@ interface Props {
 export function TriageResultCard({ result, lang, t }: Props) {
   return (
     <div className="space-y-3">
+      {result.assessment_round && result.assessment_total_rounds && (
+        <div className="rounded-lg border bg-muted/40 px-3 py-2">
+          <p className="text-xs font-semibold uppercase text-muted-foreground">
+            {lang === 'bn' ? 'Assessment Progress' : 'Assessment Progress'}
+          </p>
+          <p className="text-sm font-bangla">
+            {lang === 'bn'
+              ? `রাউন্ড ${result.assessment_round} / ${result.assessment_total_rounds}`
+              : `Round ${result.assessment_round} / ${result.assessment_total_rounds}`}
+          </p>
+        </div>
+      )}
+
       <div className="flex items-center gap-2 flex-wrap">
         <UrgencyBadge level={result.urgency_level} />
         {result.ml_classifier_used && (
           <Badge variant="secondary" className="text-xs gap-1">
             <Brain className="h-3 w-3" />
             {result.ai_fallback ? 'ML Only' : 'ML + AI'}
+          </Badge>
+        )}
+        {result.is_final_assessment && (
+          <Badge variant="default" className="text-xs">
+            {lang === 'bn' ? 'Final Diagnosis' : 'Final Diagnosis'}
           </Badge>
         )}
       </div>
@@ -71,6 +90,10 @@ export function TriageResultCard({ result, lang, t }: Props) {
             </div>
           ))}
         </div>
+      )}
+
+      {result.partner_doctors && result.partner_doctors.length > 0 && (
+        <DoctorRecommendations doctors={result.partner_doctors} lang={lang} />
       )}
     </div>
   );

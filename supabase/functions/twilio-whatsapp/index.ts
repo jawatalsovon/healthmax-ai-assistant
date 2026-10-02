@@ -1,5 +1,13 @@
+// @ts-ignore: URL imports are resolved by Deno runtime in Supabase Edge Functions.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+// @ts-ignore: URL imports are resolved by Deno runtime in Supabase Edge Functions.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+declare const Deno: {
+  env: {
+    get(key: string): string | undefined;
+  };
+};
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -114,7 +122,9 @@ function formatTriageResponse(data: any, language: string): string {
     response += isBn ? "*সম্ভাব্য রোগ:*\n" : "*Possible conditions:*\n";
     for (const d of data.diseases.slice(0, 3)) {
       const name = d.name || d.disease_name || "Unknown";
-      const conf = d.confidence ? ` (${Math.round(d.confidence * 100)}%)` : "";
+      const confidenceValue = Number(d.confidence || 0);
+      const confidencePercent = confidenceValue <= 1 ? Math.round(confidenceValue * 100) : Math.round(confidenceValue);
+      const conf = confidencePercent ? ` (${confidencePercent}%)` : "";
       response += `• ${name}${conf}\n`;
     }
     response += "\n";
@@ -163,7 +173,7 @@ function formatTriageResponse(data: any, language: string): string {
   return response;
 }
 
-serve(async (req) => {
+serve(async (req: Request) => {
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });

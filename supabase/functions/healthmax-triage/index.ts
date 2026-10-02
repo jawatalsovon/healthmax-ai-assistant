@@ -174,6 +174,71 @@ function levenshteinSimilarity(a: string, b: string): number {
   return (longer.length - costs[shorter.length]) / longer.length;
 }
 
+function normalizeUrgencyLevel(level: string | null | undefined): string {
+  const normalized = (level || "").toLowerCase();
+  if (normalized === "emergency") return "emergency";
+  if (normalized === "urgent") return "urgent";
+  if (normalized === "self-care" || normalized === "self_care") return "self_care";
+  if (normalized === "moderate") return "moderate";
+  return "moderate";
+}
+
+function normalizeBackendResult(data: any) {
+  const diseases = Array.isArray(data?.diseases)
+    ? data.diseases
+    : Array.isArray(data?.top_diseases)
+      ? data.top_diseases.map((d: any) => ({
+          name: d.disease || d.name || "Unknown",
+          name_bn: d.disease || d.name_bn || d.name || "Unknown",
+          confidence: ((d.probability ?? d.confidence ?? 0) <= 1 ? (d.probability ?? d.confidence ?? 0) * 100 : (d.probability ?? d.confidence ?? 0)),
+        }))
+      : [];
+
+  const medicines = Array.isArray(data?.medicines)
+    ? data.medicines
+    : Array.isArray(data?.drug_recommendations)
+      ? data.drug_recommendations.map((m: any) => ({
+          name: m.brand_example || m.name || "Unknown",
+          generic: m.generic_name || m.generic || "Unknown",
+          price: m.price ? String(m.price) : `৳${Number(m.price_bdt || 0).toFixed(2)} / ${m.unit || "unit"}`,
+        }))
+      : [];
+
+  return {
+    ...data,
+    urgency_level: normalizeUrgencyLevel(data?.urgency_level),
+    diseases,
+    medicines,
+    recommended_facility: data?.recommended_facility || data?.facility_recommendation || "",
+    recommended_facility_bn: data?.recommended_facility_bn || data?.facility_recommendation || "",
+    explanation: data?.explanation || data?.llm_response || "",
+    explanation_bn: data?.explanation_bn || data?.llm_response || data?.explanation || "",
+    ml_classifier_used: data?.ml_classifier_used ?? true,
+    ai_fallback: data?.ai_fallback ?? true,
+  };
+}
+
+async function callBackendTriage(apiUrl: string, symptoms: string, language: string) {
+  try {
+    const response = await fetch(`${apiUrl.replace(/\/$/, "")}/api/triage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: symptoms, language }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.warn("Backend triage error:", response.status, errorText);
+      return null;
+    }
+
+    return normalizeBackendResult(await response.json());
+  } catch (error) {
+    console.warn("Backend triage fetch failed:", error);
+    return null;
+  }
+}
+
 // ─── AGENT HELPERS ───
 async function callAgent(apiKey: string, model: string, systemPrompt: string, userContent: string, tools?: any[], toolChoice?: any): Promise<any> {
   const body: any = {
@@ -228,6 +293,7 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY") || "";
+    const HEALTHMAX_API_URL = Deno.env.get("HEALTHMAX_API_URL") || "";
 
     // ── LAYER 1: Safety Guard ──
     for (const rule of EMERGENCY_PATTERNS) {
@@ -291,6 +357,29 @@ serve(async (req) => {
           notesSummary,
         });
         return new Response(JSON.stringify({ ...result, session_id: sessionId }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    if (HEALTHMAX_API_URL) {
+      const backendResult = await callBackendTriage(HEALTHMAX_API_URL, symptoms, language);
+      if (backendResult) {
+        const notesSummary = await summarizeTriageNotes(
+          LOVABLE_API_KEY,
+          language,
+          symptoms,
+          conversation,
+          backendResult,
+          patientContextFromInfo(patient_info)
+        );
+        const sessionId = await logSession(supabase, {
+          existingSessionId: session_id,
+          language,
+          result: backendResult,
+          notesSummary,
+        });
+        return new Response(JSON.stringify({ ...backendResult, session_id: sessionId }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }

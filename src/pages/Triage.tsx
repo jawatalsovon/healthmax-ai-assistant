@@ -6,14 +6,56 @@ import { Card, CardContent } from '@/components/ui/card';
 import { UrgencyBadge } from '@/components/UrgencyBadge';
 import { ConfidenceBar } from '@/components/ConfidenceBar';
 import { Mic, MicOff, Send, Loader2, AlertTriangle, Brain, Shield, Pill, FileText } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
-import { TriageResult, Message, FollowUpQuestion } from '@/types/triage';
+import { TriageResult, Message, FollowUpAnswer } from '@/types/triage';
 import { PatientInfoForm } from '@/components/PatientInfoForm';
 import { FollowUpQuestions } from '@/components/FollowUpQuestions';
 import { TriageResultCard } from '@/components/TriageResultCard';
 import { PrescriptionRequest } from '@/components/PrescriptionRequest';
+import { runBrowserTriage, TriageSessionState } from '@/lib/browserTriage';
+
+function normalizeUrgencyLevel(level?: string): string {
+  const normalized = (level || '').toLowerCase();
+  if (normalized === 'emergency') return 'emergency';
+  if (normalized === 'urgent') return 'urgent';
+  if (normalized === 'self-care' || normalized === 'self_care') return 'self_care';
+  if (normalized === 'moderate') return 'moderate';
+  return 'moderate';
+}
+
+function normalizeBackendResult(data: any): TriageResult {
+  const diseases = Array.isArray(data?.diseases)
+    ? data.diseases
+    : Array.isArray(data?.top_diseases)
+      ? data.top_diseases.map((d: any) => ({
+          name: d.disease || d.name || 'Unknown',
+          name_bn: d.disease || d.name_bn || d.name || 'Unknown',
+          confidence: Math.round(((d.probability ?? d.confidence ?? 0) <= 1 ? (d.probability ?? d.confidence ?? 0) * 100 : (d.probability ?? d.confidence ?? 0)) * 100) / 100,
+        }))
+      : [];
+
+  const medicines = Array.isArray(data?.medicines)
+    ? data.medicines
+    : Array.isArray(data?.drug_recommendations)
+      ? data.drug_recommendations.map((m: any) => ({
+          name: m.brand_example || m.name || 'Unknown',
+          generic: m.generic_name || m.generic || 'Unknown',
+          price: m.price ? String(m.price) : `৳${Number(m.price_bdt || 0).toFixed(2)} / ${m.unit || 'unit'}`,
+        }))
+      : [];
+
+  return {
+    ...data,
+    urgency_level: normalizeUrgencyLevel(data?.urgency_level),
+    diseases,
+    medicines,
+    recommended_facility: data?.recommended_facility || data?.facility_recommendation,
+    recommended_facility_bn: data?.recommended_facility_bn || data?.facility_recommendation,
+    explanation: data?.explanation || data?.llm_response || '',
+    explanation_bn: data?.explanation_bn || data?.llm_response || data?.explanation || '',
+  };
+}
 
 export default function Triage() {
   const { t, lang } = useLanguage();
@@ -23,6 +65,7 @@ export default function Triage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [triageSession, setTriageSession] = useState<TriageSessionState | null>(null);
   const [showPatientForm, setShowPatientForm] = useState(true);
   const [patientInfo, setPatientInfo] = useState<any>(null);
   const [latestResult, setLatestResult] = useState<TriageResult | null>(null);
@@ -59,28 +102,31 @@ export default function Triage() {
     setIsRecording(false);
   };
 
-  const sendMessage = async (text?: string) => {
+  const sendMessage = async (text?: string, followUpAnswers: FollowUpAnswer[] = []) => {
     const msg = text || input.trim();
-    if (!msg || isLoading) return;
+    if (isLoading) return;
+    if (!msg && followUpAnswers.length === 0) return;
 
-    const userMessage: Message = { role: 'user', content: msg };
+    const displayText = followUpAnswers.length > 0
+      ? followUpAnswers.map((answer) => `Q: ${lang === 'bn' ? answer.question_bn : answer.question_en}\nA: ${answer.answer}`).join('\n\n')
+      : msg;
+    const userMessage: Message = { role: 'user', content: displayText };
     setMessages(prev => [...prev, userMessage]);
     setInput('');
     setIsLoading(true);
 
     try {
-      const { data, error } = await supabase.functions.invoke('healthmax-triage', {
-        body: {
-          symptoms: msg,
-          language: lang,
-          session_id: sessionId,
-          conversation: [...messages, userMessage].map(m => ({ role: m.role, content: m.content })),
-          patient_info: patientInfo,
-        },
-      });
+      const requestSession = followUpAnswers.length > 0 ? triageSession : null;
+      if (!followUpAnswers.length) {
+        setTriageSession(null);
+      }
+      const raw = await runBrowserTriage(msg, requestSession, followUpAnswers);
+      const data = normalizeBackendResult(raw);
 
-      if (error) throw error;
       if (data.session_id) setSessionId(data.session_id);
+      if ((raw as any).triage_session) {
+        setTriageSession((raw as any).triage_session as TriageSessionState);
+      }
 
       const assistantMsg: Message = {
         role: 'assistant',
@@ -100,7 +146,7 @@ export default function Triage() {
     }
   };
 
-  const handleFollowUpAnswer = (answer: string) => sendMessage(answer);
+  const handleFollowUpAnswer = (answers: FollowUpAnswer[]) => sendMessage('', answers);
 
   const handlePatientInfoSubmit = (info: any) => {
     setPatientInfo(info);
